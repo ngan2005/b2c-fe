@@ -6,6 +6,10 @@ import vueDevTools from 'vite-plugin-vue-devtools'
 
 // https://vite.dev/config/
 export default defineConfig({
+  define: {
+    // Polyfill Node.js `global` for browser bundles (sockjs-client references it).
+    global: 'globalThis',
+  },
   plugins: [
     vue(),
     vueDevTools(),

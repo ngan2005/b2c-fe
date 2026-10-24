@@ -1,11 +1,10 @@
-<script setup></script>
+<script setup>
+import ToastHost from '@/components/common/ToastHost.vue'
+import DialogHost from '@/components/common/DialogHost.vue'
+</script>
 
 <template>
-  <h1>You did it!</h1>
-  <p>
-    Visit <a href="https://vuejs.org/" target="_blank" rel="noopener">vuejs.org</a> to read the
-    documentation
-  </p>
+  <router-view />
+  <ToastHost />
+  <DialogHost />
 </template>
-
-<style scoped></style>
