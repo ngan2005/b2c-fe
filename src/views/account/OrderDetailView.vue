@@ -20,6 +20,55 @@
       <ErrorState v-else-if="errorMsg" :message="errorMsg" @retry="fetchOrder" />
 
       <div v-else-if="order" class="space-y-6">
+        <!-- Unpaid Online Order TTL Countdown Banner -->
+        <div
+          v-if="isUnpaidOnlineOrder"
+          class="p-4 bg-gradient-to-r from-amber-50 to-orange-50 rounded-3xl border border-amber-200 shadow-sm d-flex flex-wrap align-items-center justify-content-between gap-3"
+        >
+          <div class="d-flex align-items-center gap-3">
+            <div class="w-12 h-12 rounded-2xl bg-amber-500 text-white d-flex align-items-center justify-content-center text-xl shrink-0 shadow-sm">
+              <i class="bi bi-clock-history"></i>
+            </div>
+            <div>
+              <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
+                <h5 class="text-sm font-bold text-amber-950 m-0">Đơn hàng đang chờ bạn thanh toán!</h5>
+                <span class="badge bg-rose-600 text-white font-mono px-2 py-1 text-xs d-flex align-items-center gap-1 shadow-xs">
+                  <i class="bi bi-hourglass-split"></i> {{ ttlCountdownText }}
+                </span>
+              </div>
+              <p class="text-xs text-amber-800 mb-0 leading-relaxed">
+                Vui lòng thanh toán trước khi thời gian kết thúc (15 phút). Hết thời gian đơn sẽ tự động hủy và giải phóng kho cho người mua khác.
+              </p>
+            </div>
+          </div>
+          <button
+            class="btn btn-danger rounded-2xl font-bold px-4 py-2.5 shadow-md d-flex align-items-center gap-2 hover:scale-105 transition-transform"
+            :disabled="retryingPay || remainingSeconds <= 0"
+            @click="handleRetryPay"
+          >
+            <span v-if="retryingPay" class="spinner-border spinner-border-sm"></span>
+            <i v-else class="bi bi-credit-card-2-front-fill"></i>
+            Thanh Toán Ngay Qua VNPay
+          </button>
+        </div>
+
+        <!-- Cancelled Order Info Banner -->
+        <div
+          v-else-if="order.status === 'CANCELLED'"
+          class="p-4 bg-rose-50 rounded-3xl border border-rose-200 d-flex align-items-center gap-3"
+        >
+          <div class="w-10 h-10 rounded-2xl bg-rose-600 text-white d-flex align-items-center justify-content-center text-lg shrink-0">
+            <i class="bi bi-x-circle-fill"></i>
+          </div>
+          <div>
+            <h5 class="text-sm font-bold text-rose-950 mb-0.5">Đơn hàng này đã bị hủy</h5>
+            <p class="text-xs text-rose-800 mb-0">
+              Lý do: <strong>{{ order.cancelReason || 'Hết thời gian thanh toán hoặc người mua yêu cầu hủy' }}</strong>
+              <span v-if="order.cancelledAt" class="text-slate-500 ms-1">({{ formatDate(order.cancelledAt) }})</span>
+            </p>
+          </div>
+        </div>
+
         <!-- Order Progress Steps Timeline -->
         <div class="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
           <div class="row text-center g-3">
@@ -306,7 +355,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { buyerOrderService } from '@/services/buyerOrder.service'
 import { reviewService } from '@/services/review.service'
@@ -322,6 +371,59 @@ const loading = ref(true)
 const errorMsg = ref('')
 const order = ref(null)
 const placeholderImg = 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=200&auto=format&fit=crop&q=80'
+
+// Unpaid online TTL Countdown & Retry Pay
+const retryingPay = ref(false)
+const remainingSeconds = ref(0)
+let timerInterval = null
+
+const isUnpaidOnlineOrder = computed(() => {
+  return (
+    order.value?.status === 'PENDING' &&
+    order.value?.paymentStatus !== 'PAID' &&
+    order.value?.paymentMethod?.toUpperCase() !== 'COD'
+  )
+})
+
+const ttlCountdownText = computed(() => {
+  if (remainingSeconds.value <= 0) return '00:00 (Hết hạn)'
+  const mins = Math.floor(remainingSeconds.value / 60)
+  const secs = remainingSeconds.value % 60
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+})
+
+const updateCountdown = () => {
+  if (!order.value?.createdAt || !isUnpaidOnlineOrder.value) {
+    remainingSeconds.value = 0
+    return
+  }
+  const created = new Date(order.value.createdAt).getTime()
+  const expireAt = created + 15 * 60 * 1000 // 15 minutes TTL
+  const now = Date.now()
+  const diffSecs = Math.max(0, Math.floor((expireAt - now) / 1000))
+  remainingSeconds.value = diffSecs
+  if (diffSecs <= 0 && order.value.status === 'PENDING') {
+    setTimeout(fetchOrder, 2500)
+  }
+}
+
+const handleRetryPay = async () => {
+  if (!order.value?.id) return
+  try {
+    retryingPay.value = true
+    const res = await buyerOrderService.retryPay(order.value.id)
+    const url = res.data?.data?.paymentUrl || res.data?.paymentUrl
+    if (url) {
+      window.location.href = url
+    } else {
+      notify.push('Không lấy được liên kết thanh toán. Vui lòng thử lại!', 'danger')
+    }
+  } catch (err) {
+    notify.push(err.response?.data?.message || 'Lỗi khi mở cổng thanh toán', 'danger')
+  } finally {
+    retryingPay.value = false
+  }
+}
 
 // Review modal state
 const showReviewModal = ref(false)
@@ -526,11 +628,21 @@ const formatDate = (dateStr) => {
 
 onMounted(async () => {
   await fetchOrder()
+  updateCountdown()
+  timerInterval = setInterval(updateCountdown, 1000)
+
   if (route.query.action === 'review' && isCompleted.value) {
     const unreviewed = order.value?.items?.find((it) => !it.isReviewed)
     if (unreviewed) {
       openReviewModal(unreviewed)
     }
+  }
+})
+
+onUnmounted(() => {
+  if (timerInterval) {
+    clearInterval(timerInterval)
+    timerInterval = null
   }
 })
 </script>

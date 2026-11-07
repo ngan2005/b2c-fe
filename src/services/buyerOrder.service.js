@@ -24,6 +24,9 @@ export const buyerOrderService = {
       params: { reason },
     })
   },
+  retryPay(id) {
+    return apiClient.post(`/buyer/orders/${id}/pay`)
+  },
   requestReturn(id, payload) {
     return apiClient.post(`/buyer/orders/${id}/return-request`, payload)
   },

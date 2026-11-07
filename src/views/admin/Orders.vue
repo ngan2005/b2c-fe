@@ -25,7 +25,17 @@
               <i class="bi bi-filter me-1"></i> Lọc
             </button>
           </div>
-          <div class="col-md-6 text-end">
+          <div class="col-md-6 text-end d-flex align-items-center justify-content-end gap-3">
+            <button
+              class="btn btn-sm btn-outline-danger d-flex align-items-center gap-1.5"
+              :disabled="cleaningExpired"
+              @click="cleanupExpiredOrders"
+              title="Tự động hủy các đơn hàng chưa thanh toán quá 15 phút và hoàn trả tồn kho"
+            >
+              <span v-if="cleaningExpired" class="spinner-border spinner-border-sm"></span>
+              <i v-else class="bi bi-clock-history"></i>
+              Quét & Hủy Đơn Quá Hạn (15m)
+            </button>
             <span class="text-muted small">{{ totalElements }} đơn hàng</span>
           </div>
         </div>
@@ -144,6 +154,23 @@ const page = ref(0)
 const size = ref(20)
 const filterStatus = ref('PENDING')
 const loading = ref(false)
+const cleaningExpired = ref(false)
+
+async function cleanupExpiredOrders() {
+  const ok = await dialog.confirm('Bạn có chắc muốn quét và hủy toàn bộ đơn hàng chưa thanh toán quá 15 phút không? Tồn kho giữ chỗ sẽ được giải phóng lập tức.')
+  if (!ok) return
+  cleaningExpired.value = true
+  try {
+    const res = await adminOrderService.cleanupExpired()
+    const count = res?.data ?? res ?? 0
+    notify.push(`Đã hoàn tất quét: Đã hủy ${count} đơn quá hạn và giải phóng kho!`, 'success')
+    await load()
+  } catch (err) {
+    notify.push(err?.response?.data?.message || 'Lỗi khi quét đơn quá hạn', 'danger')
+  } finally {
+    cleaningExpired.value = false
+  }
+}
 
 // Reject modal
 const showRejectModal = ref(false)

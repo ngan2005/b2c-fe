@@ -13,4 +13,7 @@ export const adminOrderService = {
   rejectReturn(id, adminNote) {
     return apiClient.post(`/admin/orders/${id}/reject-return`, { adminNote })
   },
+  cleanupExpired() {
+    return apiClient.post('/admin/orders/cleanup-expired')
+  },
 }

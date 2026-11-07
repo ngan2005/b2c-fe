@@ -105,6 +105,17 @@
                   </div>
                   <div class="d-flex align-items-center gap-2">
                     <button
+                      v-if="order.status === 'PENDING' && order.paymentStatus === 'UNPAID' && order.paymentMethod?.toUpperCase() !== 'COD'"
+                      type="button"
+                      class="btn btn-sm btn-danger text-white fw-bold rounded-pill px-3 d-flex align-items-center gap-1 shadow-xs"
+                      :disabled="retryingOrderId === order.id"
+                      @click="retryPayment(order)"
+                    >
+                      <span v-if="retryingOrderId === order.id" class="spinner-border spinner-border-sm"></span>
+                      <i v-else class="bi bi-credit-card-2-front-fill"></i>
+                      Thanh toán ngay
+                    </button>
+                    <button
                       v-if="['PENDING', 'CONFIRMED'].includes(order.status)"
                       type="button"
                       class="btn btn-sm btn-outline-secondary rounded-pill px-3"
@@ -187,6 +198,25 @@ const selectedStatus = ref('')
 const orders = ref([])
 const showCancelModal = ref(false)
 const cancelling = ref(false)
+const retryingOrderId = ref(null)
+
+const retryPayment = async (order) => {
+  if (!order?.id) return
+  try {
+    retryingOrderId.value = order.id
+    const res = await buyerOrderService.retryPay(order.id)
+    const url = res.data?.data?.paymentUrl || res.data?.paymentUrl
+    if (url) {
+      window.location.href = url
+    } else {
+      notify.push('Không lấy được liên kết thanh toán. Vui lòng thử lại!', 'danger')
+    }
+  } catch (err) {
+    notify.push(err.response?.data?.message || 'Lỗi khi mở cổng thanh toán', 'danger')
+  } finally {
+    retryingOrderId.value = null
+  }
+}
 const targetOrder = ref(null)
 const cancelReason = ref('')
 const placeholderImg = 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=200&auto=format&fit=crop&q=80'
