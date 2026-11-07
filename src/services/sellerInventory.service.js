@@ -8,3 +8,4 @@ export const sellerInventoryService = {
     return apiClient.put(`/seller/inventory/${variantId}/stock`, { stockQuantity })
   },
 }
+
