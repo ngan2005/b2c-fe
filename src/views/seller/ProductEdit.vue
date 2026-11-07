@@ -31,6 +31,130 @@ const form = ref({
 })
 const categories = ref([])
 
+// ── Classification & Variant Matrix State ─────────────────────────────────────
+const enableVariants = ref(false)
+const singleStock = ref(100)
+const singleSku = ref('')
+const singleVariantId = ref(null)
+
+const optionGroups = ref([
+  { name: 'Màu sắc', values: ['Đỏ', 'Xanh'], inputValue: '' }
+])
+
+const matrixVariants = ref([])
+
+const bulkApply = ref({
+  price: null,
+  salePrice: null,
+  stockQuantity: null,
+  weightGram: null,
+})
+
+function addOptionGroup() {
+  if (optionGroups.value.length >= 2) return
+  const defaultName = optionGroups.value.length === 0 ? 'Màu sắc' : 'Kích cỡ'
+  optionGroups.value.push({ name: defaultName, values: [], inputValue: '' })
+  regenerateMatrix()
+}
+
+function removeOptionGroup(idx) {
+  optionGroups.value.splice(idx, 1)
+  regenerateMatrix()
+}
+
+function addOptionValue(group) {
+  const val = group.inputValue?.trim()
+  if (!val) return
+  if (!group.values.includes(val)) {
+    group.values.push(val)
+    regenerateMatrix()
+  }
+  group.inputValue = ''
+}
+
+function removeOptionValue(group, valIdx) {
+  group.values.splice(valIdx, 1)
+  regenerateMatrix()
+}
+
+function regenerateMatrix() {
+  const validGroups = optionGroups.value.filter(g => g.name.trim() && g.values.length > 0)
+  if (validGroups.length === 0) {
+    matrixVariants.value = []
+    return
+  }
+
+  // Cartesian product
+  let combinations = validGroups[0].values.map(v => [v])
+  for (let i = 1; i < validGroups.length; i++) {
+    const nextCombos = []
+    for (const combo of combinations) {
+      for (const val of validGroups[i].values) {
+        nextCombos.push([...combo, val])
+      }
+    }
+    combinations = nextCombos
+  }
+
+  const prevMap = new Map()
+  for (const mv of matrixVariants.value) {
+    prevMap.set(mv.variantName, mv)
+  }
+
+  const basePrice = form.value.minPrice || 100000
+  const baseWeight = form.value.weightGram || 250
+  const slugClean = (form.value.slug || form.value.name || 'SKU')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '-')
+    .slice(0, 15)
+
+  matrixVariants.value = combinations.map((combo, idx) => {
+    const name = combo.join(' / ')
+    const existing = prevMap.get(name)
+    if (existing) {
+      return {
+        ...existing,
+        optionValues: combo,
+      }
+    }
+    const skuCode = `${slugClean}-${combo.map(c => c.replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase()).join('-')}`
+    return {
+      id: null,
+      variantName: name,
+      optionValues: combo,
+      price: basePrice,
+      salePrice: null,
+      stockQuantity: 50,
+      weightGram: baseWeight,
+      sku: skuCode,
+    }
+  })
+
+  syncMinMaxPrice()
+}
+
+function applyBulk() {
+  if (matrixVariants.value.length === 0) return
+  for (const v of matrixVariants.value) {
+    if (bulkApply.value.price !== null && bulkApply.value.price !== '') v.price = Number(bulkApply.value.price)
+    if (bulkApply.value.salePrice !== null && bulkApply.value.salePrice !== '') v.salePrice = Number(bulkApply.value.salePrice)
+    if (bulkApply.value.stockQuantity !== null && bulkApply.value.stockQuantity !== '') v.stockQuantity = Number(bulkApply.value.stockQuantity)
+    if (bulkApply.value.weightGram !== null && bulkApply.value.weightGram !== '') v.weightGram = Number(bulkApply.value.weightGram)
+  }
+  syncMinMaxPrice()
+  notify.push('Đã áp dụng thông tin cho tất cả phân loại', 'success')
+}
+
+function syncMinMaxPrice() {
+  if (matrixVariants.value.length > 0) {
+    const prices = matrixVariants.value.map(v => Number(v.price) || 0).filter(p => p > 0)
+    if (prices.length > 0) {
+      form.value.minPrice = Math.min(...prices)
+      form.value.maxPrice = Math.max(...prices)
+    }
+  }
+}
+
 // ── Gallery state ─────────────────────────────────────────────────────────────
 const gallery = ref([])
 const uploading = ref(false)
@@ -74,6 +198,49 @@ async function load() {
         heightCm: p.heightCm,
       }
       gallery.value = [...(p.images || [])].sort((a, b) => a.sortOrder - b.sortOrder)
+
+      if (p.options && p.options.length > 0) {
+        enableVariants.value = true
+        optionGroups.value = p.options.map(opt => ({
+          name: opt.name,
+          values: (opt.values || []).map(val => val.value),
+          inputValue: '',
+        }))
+        if (p.variants && p.variants.length > 0) {
+          matrixVariants.value = p.variants.map(v => {
+            const optVals = v.attributes ? Object.values(v.attributes) : []
+            return {
+              id: v.id,
+              variantName: v.variantName,
+              optionValues: optVals,
+              price: v.price,
+              salePrice: v.salePrice,
+              stockQuantity: v.stockQuantity,
+              weightGram: v.weightGram,
+              sku: v.sku,
+            }
+          })
+        } else {
+          regenerateMatrix()
+        }
+      } else if (p.variants && p.variants.length > 1) {
+        enableVariants.value = true
+        matrixVariants.value = p.variants.map(v => ({
+          id: v.id,
+          variantName: v.variantName,
+          optionValues: [],
+          price: v.price,
+          salePrice: v.salePrice,
+          stockQuantity: v.stockQuantity,
+          weightGram: v.weightGram,
+          sku: v.sku,
+        }))
+      } else if (p.variants && p.variants.length === 1) {
+        enableVariants.value = false
+        singleVariantId.value = p.variants[0].id
+        singleStock.value = p.variants[0].stockQuantity || 100
+        singleSku.value = p.variants[0].sku || ''
+      }
     }
   } finally {
     loading.value = false
@@ -85,13 +252,66 @@ async function onSubmit() {
     notify.push('Vui lòng nhập tên sản phẩm và chọn danh mục', 'warning')
     return
   }
+
+  const payload = { ...form.value }
+
+  if (enableVariants.value) {
+    if (matrixVariants.value.length === 0) {
+      notify.push('Vui lòng thêm ít nhất 1 phân loại hàng', 'warning')
+      return
+    }
+    for (const v of matrixVariants.value) {
+      if (!v.price || v.price <= 0) {
+        notify.push(`Vui lòng nhập giá hợp lệ (> 0) cho phân loại ${v.variantName}`, 'warning')
+        return
+      }
+      if (v.stockQuantity === null || v.stockQuantity === undefined || v.stockQuantity < 0) {
+        notify.push(`Vui lòng nhập số lượng tồn kho hợp lệ (≥ 0) cho phân loại ${v.variantName}`, 'warning')
+        return
+      }
+    }
+    syncMinMaxPrice()
+    payload.minPrice = form.value.minPrice
+    payload.maxPrice = form.value.maxPrice
+
+    payload.options = optionGroups.value
+      .filter(g => g.name.trim() && g.values.length > 0)
+      .map(g => ({
+        name: g.name.trim(),
+        values: g.values.map(v => v.trim()),
+      }))
+
+    payload.variants = matrixVariants.value.map(v => ({
+      id: v.id,
+      sku: v.sku?.trim() || null,
+      variantName: v.variantName?.trim() || 'Phân loại',
+      price: v.price,
+      salePrice: v.salePrice,
+      stockQuantity: v.stockQuantity,
+      weightGram: v.weightGram || form.value.weightGram,
+      optionValues: v.optionValues,
+    }))
+  } else {
+    payload.options = []
+    payload.variants = [{
+      id: singleVariantId.value,
+      sku: singleSku.value?.trim() || null,
+      variantName: 'Mặc định',
+      price: form.value.minPrice,
+      salePrice: null,
+      stockQuantity: singleStock.value,
+      weightGram: form.value.weightGram,
+      optionValues: [],
+    }]
+  }
+
   saving.value = true
   try {
     if (isEdit.value) {
-      await sellerProductService.update(route.params.id, form.value)
+      await sellerProductService.update(route.params.id, payload)
       notify.push('Đã cập nhật sản phẩm', 'success')
     } else {
-      await sellerProductService.create(form.value)
+      await sellerProductService.create(payload)
       notify.push('Đã tạo sản phẩm', 'success')
     }
     router.push({ name: 'seller-products' })
@@ -458,6 +678,196 @@ onMounted(load)
             <div v-else class="pe-info-note">
               <i class="bi bi-info-circle"></i>
               Bộ sưu tập ảnh sẽ mở sau khi bạn tạo sản phẩm thành công.
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Section: Phân loại hàng & Quản lý kho theo đặc tính -->
+        <div class="pe-card">
+          <div class="pe-card-header d-flex justify-content-between align-items-center">
+            <div class="d-flex align-items-center gap-2">
+              <div class="pe-card-icon" style="background:#f5f3ff;">
+                <i class="bi bi-diagram-3" style="color:#7c3aed;"></i>
+              </div>
+              <div>
+                <h2 class="pe-card-title">Phân loại hàng & Quản lý kho</h2>
+                <p class="pe-card-desc">Thiết lập màu sắc, kích thước và tồn kho riêng cho từng đặc tính</p>
+              </div>
+            </div>
+            <!-- Toggle switch -->
+            <label class="pe-switch">
+              <input type="checkbox" v-model="enableVariants" @change="enableVariants && regenerateMatrix()" />
+              <span class="pe-slider"></span>
+              <span class="pe-switch-text">{{ enableVariants ? 'Có phân loại' : 'Không phân loại' }}</span>
+            </label>
+          </div>
+
+          <div class="pe-card-body">
+
+            <!-- Simple mode: No variants -->
+            <div v-if="!enableVariants" class="pe-simple-variant">
+              <div class="pe-info-note mb-3">
+                <i class="bi bi-box-seam"></i>
+                Sản phẩm này là <strong>sản phẩm đơn</strong> (chỉ có 1 mẫu mã chung). Bật công tắc phía trên nếu sản phẩm có nhiều màu, nhiều kích thước khác nhau.
+              </div>
+              <div class="pe-field-row">
+                <div class="pe-field">
+                  <label class="pe-label">Số lượng tồn kho ban đầu <span class="pe-required">*</span></label>
+                  <input v-model.number="singleStock" type="number" min="0" class="pe-input" required placeholder="100" />
+                  <span class="pe-hint">Số lượng hàng thực tế có sẵn trong kho</span>
+                </div>
+                <div class="pe-field">
+                  <label class="pe-label">Mã SKU kho hàng <span class="pe-optional">(tùy chọn)</span></label>
+                  <input v-model="singleSku" class="pe-input" placeholder="VD: AO-THUN-01" />
+                  <span class="pe-hint">Mã định danh quản lý nội bộ</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Advanced mode: Variant Matrix -->
+            <div v-else>
+
+              <!-- Option Groups (Nhóm phân loại: Màu, Size...) -->
+              <div class="pe-options-container mb-4">
+                <div
+                  v-for="(group, gIdx) in optionGroups"
+                  :key="gIdx"
+                  class="pe-option-box mb-3"
+                >
+                  <div class="pe-option-box-header d-flex justify-content-between align-items-center mb-2">
+                    <span class="fw-bold pe-label mb-0">Nhóm phân loại {{ gIdx + 1 }}</span>
+                    <button
+                      type="button"
+                      class="btn btn-sm btn-outline-danger border-0 p-1"
+                      @click="removeOptionGroup(gIdx)"
+                      title="Xóa nhóm này"
+                    >
+                      <i class="bi bi-trash"></i> Xóa nhóm
+                    </button>
+                  </div>
+
+                  <div class="pe-field mb-2">
+                    <label class="pe-label">Tên nhóm thuộc tính</label>
+                    <input
+                      v-model="group.name"
+                      class="pe-input"
+                      placeholder="VD: Màu sắc, Kích thước, Dung lượng..."
+                      @change="regenerateMatrix"
+                    />
+                  </div>
+
+                  <label class="pe-label">Danh sách giá trị (Đặc tính)</label>
+                  <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+                    <span
+                      v-for="(val, vIdx) in group.values"
+                      :key="vIdx"
+                      class="pe-tag-chip"
+                    >
+                      {{ val }}
+                      <i class="bi bi-x-circle ms-1 cursor-pointer" @click="removeOptionValue(group, vIdx)"></i>
+                    </span>
+
+                    <!-- Input add new tag -->
+                    <div class="d-flex align-items-center gap-1">
+                      <input
+                        v-model="group.inputValue"
+                        class="pe-input pe-tag-input"
+                        placeholder="Nhập giá trị (vd: Đỏ) rồi nhấn Enter"
+                        @keydown.enter.prevent="addOptionValue(group)"
+                      />
+                      <button
+                        type="button"
+                        class="btn btn-sm btn-outline-primary"
+                        @click="addOptionValue(group)"
+                      >
+                        + Thêm
+                      </button>
+                    </div>
+                  </div>
+                  <span class="pe-hint">Nhập từng đặc tính (ví dụ: Đỏ, Xanh, Vàng) rồi nhấn Enter</span>
+                </div>
+
+                <!-- Add group button -->
+                <button
+                  v-if="optionGroups.length < 2"
+                  type="button"
+                  class="btn btn-outline-secondary w-100 py-2 border-dashed d-flex align-items-center justify-content-center gap-2"
+                  @click="addOptionGroup"
+                >
+                  <i class="bi bi-plus-circle"></i> Thêm nhóm phân loại {{ optionGroups.length === 1 ? '2 (Kích cỡ)' : '' }}
+                </button>
+              </div>
+
+              <!-- Variant Matrix Table -->
+              <div v-if="matrixVariants.length > 0" class="pe-matrix-wrapper">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <h3 class="pe-card-title mb-0">Danh sách mẫu phân loại ({{ matrixVariants.length }} mẫu)</h3>
+                </div>
+
+                <!-- Bulk apply toolbar -->
+                <div class="pe-bulk-toolbar mb-3 p-3 rounded" style="background: #f8fafc; border: 1px dashed #cbd5e1;">
+                  <span class="pe-label mb-2 d-block fw-bold text-primary">
+                    <i class="bi bi-lightning-charge me-1"></i>Áp dụng nhanh cho tất cả phân loại:
+                  </span>
+                  <div class="row g-2 align-items-center">
+                    <div class="col-md-3">
+                      <input v-model.number="bulkApply.price" type="number" min="0" step="1000" class="pe-input" placeholder="Giá bán (₫)" />
+                    </div>
+                    <div class="col-md-3">
+                      <input v-model.number="bulkApply.stockQuantity" type="number" min="0" class="pe-input" placeholder="Kho hàng (cái)" />
+                    </div>
+                    <div class="col-md-3">
+                      <input v-model.number="bulkApply.weightGram" type="number" min="0" class="pe-input" placeholder="Cân nặng (g)" />
+                    </div>
+                    <div class="col-md-3">
+                      <button type="button" class="btn btn-primary w-100 h-100 py-2" @click="applyBulk">
+                        Áp dụng tất cả
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Table -->
+                <div class="table-responsive">
+                  <table class="table table-bordered align-middle pe-matrix-table mb-0">
+                    <thead class="table-light">
+                      <tr>
+                        <th style="min-width: 140px;">Phân loại hàng</th>
+                        <th style="min-width: 130px;">Giá bán (₫) <span class="pe-required">*</span></th>
+                        <th style="min-width: 130px;">Giá KM (₫)</th>
+                        <th style="min-width: 120px;">Kho hàng <span class="pe-required">*</span></th>
+                        <th style="min-width: 110px;">Cân nặng (g)</th>
+                        <th style="min-width: 140px;">Mã SKU</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="(v, vIdx) in matrixVariants" :key="vIdx">
+                        <td>
+                          <span class="fw-bold text-dark">{{ v.variantName }}</span>
+                        </td>
+                        <td>
+                          <input v-model.number="v.price" type="number" min="0" step="1000" class="pe-input pe-table-input" required @input="syncMinMaxPrice" />
+                        </td>
+                        <td>
+                          <input v-model.number="v.salePrice" type="number" min="0" step="1000" class="pe-input pe-table-input" placeholder="Tùy chọn" />
+                        </td>
+                        <td>
+                          <input v-model.number="v.stockQuantity" type="number" min="0" class="pe-input pe-table-input" required placeholder="0" />
+                        </td>
+                        <td>
+                          <input v-model.number="v.weightGram" type="number" min="0" class="pe-input pe-table-input" placeholder="250" />
+                        </td>
+                        <td>
+                          <input v-model="v.sku" class="pe-input pe-table-input" placeholder="SKU tự động" />
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+              </div>
+
             </div>
 
           </div>
@@ -1197,6 +1607,90 @@ onMounted(load)
   left: 0;
   color: #d97706;
   font-weight: 700;
+}
+
+/* ── Classification & Variant Matrix styles ───────────────── */
+.pe-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+.pe-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+.pe-slider {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  background-color: #e5e7eb;
+  border-radius: 24px;
+  transition: 0.25s;
+}
+.pe-slider::before {
+  content: "";
+  position: absolute;
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  border-radius: 50%;
+  transition: 0.25s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+.pe-switch input:checked + .pe-slider {
+  background-color: #7c3aed;
+}
+.pe-switch input:checked + .pe-slider::before {
+  transform: translateX(20px);
+}
+.pe-switch-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.pe-option-box {
+  background: #faf5ff;
+  border: 1px solid #e9d5ff;
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+.pe-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  background: #ede9fe;
+  color: #6d28d9;
+  font-weight: 600;
+  font-size: 12px;
+  padding: 5px 10px;
+  border-radius: 16px;
+  border: 1px solid #ddd6fe;
+}
+.pe-tag-input {
+  max-width: 250px;
+  height: 32px;
+  font-size: 13px;
+}
+.pe-table-input {
+  height: 32px;
+  padding: 0 8px;
+  font-size: 13px;
+}
+.pe-matrix-table th {
+  font-size: 12px;
+  text-transform: uppercase;
+  color: #4b5563;
+  padding: 8px 10px;
+}
+.pe-matrix-table td {
+  padding: 6px 8px;
 }
 </style>
 

@@ -10,19 +10,33 @@
       </BaseButton>
     </div>
 
-    <!-- Check Stock Form -->
+    <!-- Check & Reset Stock Form -->
     <div class="row g-6">
       <div class="col-lg-5">
-        <BaseCard title="Tra Cứu Tồn Kho Theo Variant ID">
+        <BaseCard title="Tra Cứu & Cài Đặt Tồn Kho Thử Nghiệm">
           <div class="space-y-3">
             <BaseInput v-model.number="variantIdInput" type="number" label="Nhập Variant ID" placeholder="1" required />
             <BaseButton variant="primary" size="sm" class="w-100" :loading="checkingStock" @click="checkStock">
               Kiểm tra tồn kho
             </BaseButton>
 
-            <div v-if="stockResult !== null" class="p-4 bg-blue-50 text-blue-900 rounded-2xl border border-blue-200 text-center mt-3">
+            <div v-if="stockResult !== null" class="p-3 bg-blue-50 text-blue-900 rounded-2xl border border-blue-200 text-center mt-2">
               <span class="text-xs text-slate-500 d-block mb-1">Số lượng tồn kho sẵn có</span>
               <strong class="text-3xl font-extrabold text-blue-600">{{ stockResult }}</strong>
+            </div>
+
+            <!-- Quick Reset Stock for Experiment -->
+            <div class="p-3 bg-amber-50 rounded-2xl border border-amber-200 mt-3 space-y-2">
+              <span class="text-xs font-bold text-amber-900 d-flex align-items-center gap-1">
+                <i class="bi bi-arrow-counterclockwise"></i> Cài Đặt Tồn Kho Thử Nghiệm (Reset)
+              </span>
+              <p class="text-xs text-amber-700 mb-2">Đặt số lượng tồn kho ban đầu (ví dụ: 5) và xóa sạch lượt giữ chỗ cũ để sẵn sàng bắn test.</p>
+              <div class="d-flex gap-2">
+                <BaseInput v-model.number="resetQuantityInput" type="number" placeholder="5" class="flex-grow-1" />
+                <BaseButton variant="warning" size="sm" :loading="resettingStock" @click="resetStock">
+                  Đặt kho = {{ resetQuantityInput }}
+                </BaseButton>
+              </div>
             </div>
           </div>
         </BaseCard>
@@ -132,6 +146,8 @@ const notify = useNotifyStore()
 const variantIdInput = ref(1)
 const stockResult = ref(null)
 const checkingStock = ref(false)
+const resetQuantityInput = ref(5)
+const resettingStock = ref(false)
 
 const runningTest = ref(false)
 const testForm = reactive({
@@ -155,6 +171,23 @@ const checkStock = async () => {
     notify.push('Không tìm thấy thông tin tồn kho cho variant này.', 'danger')
   } finally {
     checkingStock.value = false
+  }
+}
+
+const resetStock = async () => {
+  if (!variantIdInput.value) return
+  resettingStock.value = true
+  try {
+    await apiClient.put(`/inventory/variants/${variantIdInput.value}/reset-stock`, null, {
+      params: { stockQuantity: resetQuantityInput.value ?? 5 },
+    })
+    testForm.variantId = variantIdInput.value
+    stockResult.value = resetQuantityInput.value ?? 5
+    notify.push(`Đã cài đặt tồn kho Variant #${variantIdInput.value} = ${resetQuantityInput.value ?? 5} thành công!`, 'success')
+  } catch (err) {
+    notify.push('Không thể cài lại tồn kho. Vui lòng thử lại.', 'danger')
+  } finally {
+    resettingStock.value = false
   }
 }
 

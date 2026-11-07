@@ -2,10 +2,12 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { statsService } from '@/services/stats.service'
 import { sellerOrderService } from '@/services/sellerOrder.service'
+import { sellerProfileService } from '@/services/sellerProfile.service'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
 const overview = ref(null)
+const profile = ref(null)
 const revenueSeries = ref([])
 const recentOrders = ref([])
 const loading = ref(true)
@@ -52,14 +54,16 @@ function statusBadge(s) {
 async function loadDashboardData() {
   loading.value = true
   try {
-    const [ov, rev, orders] = await Promise.all([
+    const [ov, rev, orders, prof] = await Promise.all([
       statsService.sellerOverview(),
       statsService.sellerRevenue(30),
       sellerOrderService.list({ size: 5 }),
+      sellerProfileService.getProfile().catch(() => null),
     ])
     overview.value = ov
     revenueSeries.value = rev || []
     recentOrders.value = orders?.items || orders?.content || []
+    profile.value = prof
   } catch (e) {
     // Interceptor notification
   } finally {
@@ -93,10 +97,10 @@ onUnmounted(() => {
           </div>
           <div class="flex items-center gap-3 flex-wrap">
             <h1 class="text-2xl font-black text-white m-0 tracking-tight">
-              Xin chào, {{ auth.user?.fullName || 'Gian Hàng của bạn' }}! 👋
+              Xin chào, {{ profile?.shopName || auth.user?.fullName || 'Gian Hàng của bạn' }}! 👋
             </h1>
             <span class="seller-partner-badge">
-              <i class="bi bi-patch-check-fill me-1"></i> Đối tác Kim Cương
+              <i class="bi bi-shop me-1"></i> {{ (profile?.ratingCount > 10) ? 'Đối tác Uy Tín' : 'Gian Hàng Mới' }}
             </span>
           </div>
           <p class="text-slate-400 text-xs mt-1.5 mb-0">
@@ -177,7 +181,7 @@ onUnmounted(() => {
               <i class="bi bi-arrow-return-left"></i>
             </div>
             <div>
-              <div class="text-xl font-black text-rose-600">02</div>
+              <div class="text-xl font-black text-rose-600">0</div>
               <div class="text-xs text-slate-500 font-medium">Khiếu nại / Đổi trả</div>
             </div>
           </div>
@@ -213,7 +217,7 @@ onUnmounted(() => {
               <i class="bi bi-chat-dots"></i>
             </div>
             <div>
-              <div class="text-xl font-black text-emerald-600">05</div>
+              <div class="text-xl font-black text-emerald-600">0</div>
               <div class="text-xs text-slate-500 font-medium">Tin nhắn khách chưa đọc</div>
             </div>
           </div>
@@ -236,8 +240,8 @@ onUnmounted(() => {
           </div>
         </div>
         <div class="mt-4 flex items-center justify-between text-xs">
-          <span class="inline-flex items-center text-emerald-700 font-bold bg-emerald-50 border border-emerald-200/60 px-2 py-0.5 rounded-full">
-            <i class="bi bi-arrow-up-short text-base me-0.5"></i> +14.2%
+          <span class="inline-flex items-center text-slate-500 font-bold bg-slate-50 border border-slate-200/60 px-2 py-0.5 rounded-full">
+            {{ overview?.revenueLast30Days > 0 ? '+0%' : 'Chưa có biến động' }}
           </span>
           <span class="text-slate-400 font-medium">so với tháng trước</span>
         </div>
@@ -257,8 +261,8 @@ onUnmounted(() => {
           </div>
         </div>
         <div class="mt-4 flex items-center justify-between text-xs">
-          <span class="inline-flex items-center text-indigo-700 font-bold bg-indigo-50 border border-indigo-200/60 px-2 py-0.5 rounded-full">
-            <i class="bi bi-arrow-up-short text-base me-0.5"></i> +8.5%
+          <span class="inline-flex items-center text-slate-500 font-bold bg-slate-50 border border-slate-200/60 px-2 py-0.5 rounded-full">
+            {{ overview?.totalOrders > 0 ? '+0%' : 'Chưa có biến động' }}
           </span>
           <span class="text-slate-400 font-medium">so với tuần trước</span>
         </div>
@@ -291,7 +295,8 @@ onUnmounted(() => {
           <div>
             <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Đánh giá gian hàng</span>
             <div class="text-2xl font-black text-slate-900 font-mono mt-1">
-              4.9 <span class="text-amber-500 text-sm font-normal">★ / 5.0</span>
+              {{ (profile?.ratingAvg && Number(profile.ratingAvg) > 0) ? Number(profile.ratingAvg).toFixed(1) : '0.0' }}
+              <span class="text-amber-500 text-sm font-normal">★ / 5.0</span>
             </div>
           </div>
           <div class="seller-kpi-icon-wrap bg-amber-50 text-amber-600 border border-amber-100">
@@ -300,9 +305,9 @@ onUnmounted(() => {
         </div>
         <div class="mt-4 flex items-center justify-between text-xs">
           <span class="text-amber-700 font-bold bg-amber-50 border border-amber-200/60 px-2.5 py-0.5 rounded-full">
-            99.4% 5 sao
+            {{ (profile?.ratingCount && profile.ratingCount > 0) ? `${profile.ratingAvg} ★` : 'Chưa có đánh giá' }}
           </span>
-          <span class="text-slate-400 font-medium">Từ 2.450 đánh giá</span>
+          <span class="text-slate-400 font-medium">Từ {{ profile?.ratingCount || 0 }} đánh giá</span>
         </div>
       </div>
     </div>
@@ -354,7 +359,7 @@ onUnmounted(() => {
           <div class="flex items-center justify-between mb-1">
             <h2 class="text-base font-bold text-slate-900 m-0">Hiệu Quả Vận Hành</h2>
             <span class="px-2.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-bold">
-              Chuẩn Mall
+              {{ (profile?.ratingCount > 10) ? 'Chuẩn Mall' : 'Gian Hàng Mới' }}
             </span>
           </div>
           <p class="text-xs text-slate-400 mb-4">Các chỉ số phục vụ gian hàng cam kết</p>
@@ -364,10 +369,10 @@ onUnmounted(() => {
             <div>
               <div class="flex justify-between text-xs mb-1.5">
                 <span class="font-semibold text-slate-700">Tỷ lệ giao đúng hạn</span>
-                <span class="font-bold text-emerald-600 font-mono">98.6%</span>
+                <span class="font-bold text-emerald-600 font-mono">{{ overview?.totalOrders > 0 ? '100%' : 'Chưa có đơn' }}</span>
               </div>
               <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                <div class="bg-gradient-to-r from-emerald-500 to-teal-400 h-2 rounded-full" style="width: 98.6%;"></div>
+                <div class="bg-gradient-to-r from-emerald-500 to-teal-400 h-2 rounded-full" :style="{ width: overview?.totalOrders > 0 ? '100%' : '0%' }"></div>
               </div>
             </div>
 
@@ -375,10 +380,10 @@ onUnmounted(() => {
             <div>
               <div class="flex justify-between text-xs mb-1.5">
                 <span class="font-semibold text-slate-700">Phản hồi chat (&le; 5 phút)</span>
-                <span class="font-bold text-indigo-600 font-mono">99.1%</span>
+                <span class="font-bold text-indigo-600 font-mono">100% (Mới)</span>
               </div>
               <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                <div class="bg-gradient-to-r from-indigo-500 to-indigo-600 h-2 rounded-full" style="width: 99.1%;"></div>
+                <div class="bg-gradient-to-r from-indigo-500 to-indigo-600 h-2 rounded-full" style="width: 100%;"></div>
               </div>
             </div>
 
@@ -386,10 +391,10 @@ onUnmounted(() => {
             <div>
               <div class="flex justify-between text-xs mb-1.5">
                 <span class="font-semibold text-slate-700">Tỷ lệ hủy do shop</span>
-                <span class="font-bold text-slate-800 font-mono">0.08%</span>
+                <span class="font-bold text-slate-800 font-mono">0%</span>
               </div>
               <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                <div class="bg-sky-500 h-2 rounded-full" style="width: 2%;"></div>
+                <div class="bg-sky-500 h-2 rounded-full" style="width: 0%;"></div>
               </div>
             </div>
           </div>
@@ -397,7 +402,7 @@ onUnmounted(() => {
 
         <div class="mt-6 p-3 rounded-xl bg-indigo-50/60 border border-indigo-100 text-xs text-indigo-900 flex items-center gap-2">
           <i class="bi bi-info-circle-fill text-indigo-600 text-sm shrink-0"></i>
-          <span>Gian hàng của bạn đạt chuẩn Miễn phí đẩy bài Flash Sale hàng tuần!</span>
+          <span>Gian hàng đã sẵn sàng đăng bán sản phẩm và tiếp nhận đơn hàng đầu tiên!</span>
         </div>
       </div>
     </div>

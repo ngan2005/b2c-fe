@@ -60,63 +60,93 @@
               <div style="width: 2rem;"></div>
             </div>
 
-            <!-- Items -->
+            <!-- Items grouped by Shop -->
             <div>
               <div
-                v-for="item in cartStore.items"
-                :key="item.id"
-                class="nomall-cart-item flex-column flex-md-row"
+                v-for="shop in shopGroups"
+                :key="shop.sellerId"
+                class="shop-cart-section border-bottom"
               >
-                <!-- Checkbox -->
-                <div style="width: 2.5rem; text-align: center; flex-shrink: 0;">
-                  <input type="checkbox" class="form-check-input" :checked="item.isSelected !== false" @change="onToggleSelect(item)" style="accent-color: var(--nomall-red);" />
-                </div>
-
-                <!-- Image -->
-                <img :src="item.thumbnailUrl || item.imageUrl || placeholderImg" :alt="item.productName"
-                  style="width: 5rem; height: 5rem; object-fit: cover; border-radius: 10px; border: 1.5px solid var(--nomall-border); flex-shrink: 0;" />
-
-                <!-- Info -->
-                <div class="flex-grow-1 mt-2 mt-md-0">
-                  <h4 style="font-size: 0.875rem; font-weight: 700; color: var(--nomall-ink); margin-bottom: 0.25rem; line-height: 1.4;">
-                    {{ item.productName || 'Sản phẩm' }}
-                  </h4>
-                  <span v-if="item.variantName" style="font-size: 0.75rem; color: var(--nomall-muted); background: var(--nomall-bg); padding: 0.125rem 0.5rem; border-radius: 4px; display: inline-block;">
-                    {{ item.variantName }}
-                  </span>
-                </div>
-
-                <!-- Unit price (desktop) -->
-                <div style="width: 8rem; text-align: center; font-weight: 700; font-size: 0.875rem; color: var(--nomall-ink); flex-shrink: 0;" class="d-none d-md-block">
-                  {{ formatCurrency(item.priceSnapshot) }}
-                </div>
-
-                <!-- Qty stepper -->
-                <div style="width: 7rem; display: flex; justify-content: center; flex-shrink: 0;" class="d-none d-md-block">
-                  <div class="nomall-qty">
-                    <button @click="onUpdateQty(item, Math.max(1, item.quantity - 1))">−</button>
-                    <input type="number" :value="item.quantity" @change="e => onQtyInput(item, e)" />
-                    <button @click="onUpdateQty(item, item.quantity + 1)">+</button>
+                <!-- Shop Header row -->
+                <div class="d-flex align-items-center gap-2 p-3" style="background: rgba(0,0,0,0.02); border-bottom: 1px solid var(--nomall-border);">
+                  <div style="width: 2.5rem; text-align: center; flex-shrink: 0;">
+                    <input
+                      type="checkbox"
+                      class="form-check-input"
+                      :checked="isShopAllSelected(shop)"
+                      @change="toggleShop(shop)"
+                      style="accent-color: var(--nomall-red);"
+                    />
                   </div>
+                  <i class="bi bi-shop text-danger fs-6"></i>
+                  <span class="fw-bold text-dark" style="font-size: 0.875rem;">{{ shop.shopName }}</span>
+                  <span class="badge" style="background: rgba(224, 83, 83, 0.12); color: var(--nomall-red); font-size: 0.6875rem; font-weight: 700; border-radius: 4px;">Mall</span>
                 </div>
 
-                <!-- Total -->
-                <div style="width: 7rem; text-align: end; font-weight: 800; font-size: 1rem; color: var(--nomall-red); flex-shrink: 0;" class="d-none d-md-block me-3">
-                  {{ formatCurrency(item.priceSnapshot * item.quantity) }}
-                </div>
+                <!-- Items inside this shop -->
+                <div
+                  v-for="item in shop.items"
+                  :key="item.id"
+                  class="nomall-cart-item flex-column flex-md-row"
+                >
+                  <!-- Checkbox -->
+                  <div style="width: 2.5rem; text-align: center; flex-shrink: 0;">
+                    <input type="checkbox" class="form-check-input" :checked="item.isSelected !== false" @change="onToggleSelect(item)" style="accent-color: var(--nomall-red);" />
+                  </div>
 
-                <!-- Remove -->
-                <button class="btn d-md-none mt-2" @click="onRemove(item.id)" style="color: var(--nomall-muted); border: none; background: none; align-self: flex-end;">
-                  <i class="bi bi-trash"></i>
-                </button>
+                  <!-- Image -->
+                  <img :src="item.thumbnailUrl || item.imageUrl || placeholderImg" :alt="item.productName"
+                    style="width: 5rem; height: 5rem; object-fit: cover; border-radius: 10px; border: 1.5px solid var(--nomall-border); flex-shrink: 0;" />
 
-                <!-- Mobile: show price + qty inline -->
-                <div class="d-md-none w-100 d-flex align-items-center justify-content-between mt-2">
-                  <span style="font-weight: 700; font-size: 0.875rem; color: var(--nomall-ink);">{{ formatCurrency(item.priceSnapshot * item.quantity) }}</span>
-                  <div class="nomall-qty" style="height: 1.75rem;">
-                    <button @click="onUpdateQty(item, Math.max(1, item.quantity - 1))" style="width: 1.75rem; font-size: 0.875rem;">−</button>
-                    <input type="number" :value="item.quantity" @change="e => onQtyInput(item, e)" style="width: 2rem; font-size: 0.8125rem;" />
-                    <button @click="onUpdateQty(item, item.quantity + 1)" style="width: 1.75rem; font-size: 0.875rem;">+</button>
+                  <!-- Info -->
+                  <div class="flex-grow-1 mt-2 mt-md-0">
+                    <h4 style="font-size: 0.875rem; font-weight: 700; color: var(--nomall-ink); margin-bottom: 0.25rem; line-height: 1.4;">
+                      {{ item.productName || 'Sản phẩm' }}
+                    </h4>
+                    <span v-if="item.variantName" style="font-size: 0.75rem; color: var(--nomall-muted); background: var(--nomall-bg); padding: 0.125rem 0.5rem; border-radius: 4px; display: inline-block;">
+                      {{ item.variantName }}
+                    </span>
+                  </div>
+
+                  <!-- Unit price (desktop) -->
+                  <div style="width: 8rem; text-align: center; font-weight: 700; font-size: 0.875rem; color: var(--nomall-ink); flex-shrink: 0;" class="d-none d-md-block">
+                    {{ formatCurrency(item.priceSnapshot) }}
+                  </div>
+
+                  <!-- Qty stepper -->
+                  <div style="width: 7rem; display: flex; justify-content: center; flex-shrink: 0;" class="d-none d-md-block">
+                    <div class="nomall-qty">
+                      <button @click="onUpdateQty(item, Math.max(1, item.quantity - 1))">−</button>
+                      <input type="number" :value="item.quantity" @change="e => onQtyInput(item, e)" />
+                      <button @click="onUpdateQty(item, item.quantity + 1)">+</button>
+                    </div>
+                  </div>
+
+                  <!-- Total -->
+                  <div style="width: 7rem; text-align: end; font-weight: 800; font-size: 1rem; color: var(--nomall-red); flex-shrink: 0;" class="d-none d-md-block me-3">
+                    {{ formatCurrency(item.priceSnapshot * item.quantity) }}
+                  </div>
+
+                  <!-- Remove (desktop) -->
+                  <div style="width: 2rem; text-align: center; flex-shrink: 0;" class="d-none d-md-block">
+                    <button class="btn btn-sm p-0 border-0" @click="onRemove(item.id)" title="Xóa khỏi giỏ hàng" style="color: var(--nomall-muted); background: none;">
+                      <i class="bi bi-trash fs-5 hover-danger"></i>
+                    </button>
+                  </div>
+
+                  <!-- Remove (mobile) -->
+                  <button class="btn d-md-none mt-2" @click="onRemove(item.id)" style="color: var(--nomall-muted); border: none; background: none; align-self: flex-end;">
+                    <i class="bi bi-trash"></i>
+                  </button>
+
+                  <!-- Mobile: show price + qty inline -->
+                  <div class="d-md-none w-100 d-flex align-items-center justify-content-between mt-2">
+                    <span style="font-weight: 700; font-size: 0.875rem; color: var(--nomall-ink);">{{ formatCurrency(item.priceSnapshot * item.quantity) }}</span>
+                    <div class="nomall-qty" style="height: 1.75rem;">
+                      <button @click="onUpdateQty(item, Math.max(1, item.quantity - 1))" style="width: 1.75rem; font-size: 0.875rem;">−</button>
+                      <input type="number" :value="item.quantity" @change="e => onQtyInput(item, e)" style="width: 2rem; font-size: 0.8125rem;" />
+                      <button @click="onUpdateQty(item, item.quantity + 1)" style="width: 1.75rem; font-size: 0.875rem;">+</button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -185,6 +215,31 @@ const placeholderImg = 'https://picsum.photos/seed/cart/200/200'
 onMounted(() => { cartStore.fetchCart() })
 
 const allSelected = computed(() => cartStore.items.length > 0 && cartStore.items.every(i => i.isSelected !== false))
+
+const shopGroups = computed(() => {
+  const groups = {}
+  for (const item of cartStore.items) {
+    const sId = item.sellerId || 0
+    if (!groups[sId]) {
+      groups[sId] = {
+        sellerId: sId,
+        shopName: item.shopName || 'Gian hàng đối tác',
+        items: [],
+      }
+    }
+    groups[sId].items.push(item)
+  }
+  return Object.values(groups)
+})
+
+const isShopAllSelected = (shop) => {
+  return shop.items.length > 0 && shop.items.every(i => i.isSelected !== false)
+}
+
+const toggleShop = (shop) => {
+  const target = !isShopAllSelected(shop)
+  shop.items.forEach(i => cartStore.updateQuantity(i.id, i.quantity, target))
+}
 
 const toggleAll = () => {
   const target = !allSelected.value

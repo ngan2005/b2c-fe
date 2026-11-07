@@ -480,16 +480,24 @@ async function load(showToast = false) {
     ])
 
     // Update online set
+    const onlineSet = new Set()
     if (Array.isArray(onlineRes)) {
-      onlineUserIds.value = new Set(onlineRes)
+      onlineRes.forEach((id) => onlineSet.add(Number(id)))
     }
+    onlineUserIds.value = onlineSet
 
     const fetched = res.items || res.content || []
-    // Overlay online state if not already set
-    items.value = fetched.map((u) => ({
-      ...u,
-      isOnline: u.isOnline ?? onlineUserIds.value.has(u.id),
-    }))
+    // Overlay online state if backend says isOnline OR onlineUserIds contains this id
+    items.value = fetched.map((u) => {
+      const isOnline = Boolean(u.isOnline || onlineUserIds.value.has(Number(u.id)))
+      if (isOnline) {
+        onlineUserIds.value.add(Number(u.id))
+      }
+      return {
+        ...u,
+        isOnline,
+      }
+    })
 
     totalPages.value = res.totalPages ?? 0
     totalElements.value = res.totalElements ?? items.value.length
@@ -571,7 +579,7 @@ useRealtime({
     {
       destination: '/topic/admin/presence',
       callback: (msg) => {
-        if (!msg || !msg.userId) return
+        if (!msg || msg.userId == null) return
         const userId = Number(msg.userId)
         const isOnline = Boolean(msg.isOnline)
 
@@ -582,7 +590,7 @@ useRealtime({
         }
 
         // Live update in local items list
-        const target = items.value.find((u) => u.id === userId)
+        const target = items.value.find((u) => Number(u.id) === userId)
         if (target) {
           target.isOnline = isOnline
         }

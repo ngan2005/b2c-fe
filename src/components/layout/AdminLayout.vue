@@ -173,6 +173,15 @@
               <span>Phí Sàn & Hoa Hồng</span>
             </router-link>
 
+            <router-link
+              :to="{ name: 'admin-reviews' }"
+              class="admin-nav-item"
+              :class="{ active: route.name === 'admin-reviews' }"
+            >
+              <i class="bi bi-star-half"></i>
+              <span>Quản Lý Đánh Giá</span>
+            </router-link>
+
             <!-- Group: Đối tác & Người dùng -->
             <div class="admin-nav-group-title">ĐỐI TÁC & NGƯỜI DÙNG</div>
             <router-link

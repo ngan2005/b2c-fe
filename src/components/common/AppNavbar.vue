@@ -45,6 +45,26 @@
           <!-- Right Actions -->
           <div class="header-actions">
 
+            <!-- Kênh Người Bán (Shopee style switcher) -->
+            <router-link
+              v-if="auth.isSeller"
+              :to="{ name: 'seller-dashboard' }"
+              class="action-item"
+              title="Vào Kênh Nhà Bán Hàng"
+            >
+              <i class="bi bi-shop action-icon text-primary"></i>
+              <span class="action-label text-primary fw-bold">Kênh Nhà Bán</span>
+            </router-link>
+            <router-link
+              v-else-if="auth.isBuyer"
+              :to="{ name: 'apply-seller' }"
+              class="action-item"
+              title="Đăng ký mở gian hàng bán hàng"
+            >
+              <i class="bi bi-shop-window action-icon"></i>
+              <span class="action-label">Kênh Người Bán</span>
+            </router-link>
+
             <!-- Đơn hàng -->
             <router-link v-if="auth.isBuyer" :to="{ name: 'account-orders' }" class="action-item">
               <i class="bi bi-box-seam action-icon"></i>
@@ -130,6 +150,11 @@
                 <li v-if="auth.isSeller" class="menu-divider">
                   <router-link :to="{ name: 'seller-dashboard' }" class="dropdown-item text-primary fw-semibold">
                     <i class="bi bi-shop me-2"></i> Kênh Nhà Bán
+                  </router-link>
+                </li>
+                <li v-else-if="auth.isBuyer" class="menu-divider">
+                  <router-link :to="{ name: 'apply-seller' }" class="dropdown-item text-success fw-semibold">
+                    <i class="bi bi-shop-window me-2"></i> Đăng Ký Bán Hàng / Mở Shop
                   </router-link>
                 </li>
                 <li v-if="auth.isAdmin" class="menu-divider">

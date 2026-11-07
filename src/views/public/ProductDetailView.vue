@@ -100,6 +100,7 @@
               <div class="card-pastel p-3 mb-3" style="background: var(--pastel-cream); border-color: var(--pastel-pink) !important;">
                 <VariantSelector
                   :variants="product.variants || []"
+                  :options="product.options || []"
                   :model-value="selectedAttributeValues"
                   :base-price="product.minPrice || product.price || 0"
                   @update:model-value="onVariantSelected"
@@ -295,7 +296,8 @@ const imagesList = computed(() => {
  */
 const productHasVariants = computed(() => {
   if (!product.value?.variants?.length) return false
-  return product.value.variants.some(v => v.attributeName && v.attributeValue)
+  if (product.value?.options?.length > 0) return true
+  return product.value.variants.some(v => (v.attributes && Object.keys(v.attributes).length > 0) || (v.attributeName && v.attributeValue))
 })
 
 /**

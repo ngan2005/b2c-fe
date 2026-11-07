@@ -9,21 +9,15 @@
  *     ]
  *   })
  *
- * Replaces the previous STOMP/SockJS `useRealtime` composable for admin
- * dashboards. The EventSource API does not support custom request headers, so
- * the JWT is passed as a `?token=` query parameter (the backend
- * `AdminSseController` validates it manually).
- *
- * Auto-reconnects with exponential back-off on disconnect, sends heartbeats
- * (comment frames) every 30s, and tears down cleanly on unmount.
+ * Connects to /api/v1/admin/sse/{topic}?token=... using EventSource.
+ * Auto-reconnects with exponential back-off on disconnect, handles heartbeats,
+ * and tears down cleanly on unmount or logout.
  */
-import { ref, onUnmounted } from 'vue'
+import { ref, onUnmounted, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 
-// Same origin as the API base (VITE_API_BASE or default).
-const API_ORIGIN = new URL(
-  import.meta.env.VITE_API_BASE || 'http://localhost:8080/api/v1',
-).origin
+// Base API URL with /api/v1 (e.g. http://localhost:8080/api/v1)
+const API_BASE = (import.meta.env.VITE_API_BASE || 'http://localhost:8080/api/v1').replace(/\/+$/, '')
 
 const BASE_DELAY = 1_000
 const MAX_DELAY = 30_000
@@ -41,11 +35,10 @@ export function useAdminSse(options = {}) {
   function buildUrl(topic) {
     const token = auth.token
     if (!token) return null
-    return `${API_ORIGIN}/admin/sse/${topic}?token=${encodeURIComponent(token)}`
+    return `${API_BASE}/admin/sse/${topic}?token=${encodeURIComponent(token)}`
   }
 
   function parseEvent(event) {
-    // SSE dispatches as a single `message` event with JSON body.
     try {
       return JSON.parse(event.data)
     } catch {
@@ -65,10 +58,19 @@ export function useAdminSse(options = {}) {
     handles.set(topic, handle)
 
     function connect() {
-      // Guard: component may have been unmounted
       if (!handles.has(topic)) return
+      if (!auth.token) return
 
-      handle.emitter = new EventSource(url, { withCredentials: false })
+      const currentUrl = buildUrl(topic)
+      if (!currentUrl) return
+
+      try {
+        handle.emitter = new EventSource(currentUrl, { withCredentials: false })
+      } catch (err) {
+        lastError.value = `Failed to create EventSource: ${err.message}`
+        scheduleReconnect(topic)
+        return
+      }
 
       handle.emitter.onopen = () => {
         isConnected.value = true
@@ -76,17 +78,25 @@ export function useAdminSse(options = {}) {
         handle.attempt = 0
       }
 
-      handle.emitter.onmessage = (e) => {
+      function handleIncoming(e) {
         const msg = parseEvent(e)
-        if (msg && msg.type && msg.type !== 'raw') {
-          try { callback(msg) } catch (err) { console.error('[useAdminSse] callback error:', err) }
+        if (msg) {
+          try {
+            callback(msg)
+          } catch (err) {
+            console.error('[useAdminSse] callback error:', err)
+          }
         }
       }
 
-      handle.emitter.onerror = (e) => {
-        // Browser will auto-reconnect on transient network blips, but if
-        // the server returned 4xx/5xx the connection is dead. We close
-        // explicitly and schedule our own back-off.
+      handle.emitter.onmessage = handleIncoming
+      handle.emitter.addEventListener('message', handleIncoming)
+      handle.emitter.addEventListener('hello', () => {
+        isConnected.value = true
+        lastError.value = null
+      })
+
+      handle.emitter.onerror = () => {
         try { handle.emitter.close() } catch {}
         isConnected.value = false
         lastError.value = `SSE ${topic} disconnected`
@@ -98,6 +108,7 @@ export function useAdminSse(options = {}) {
       const h = handles.get(t)
       if (!h) return
       if (h.reconnectTimer != null) return
+
       const delay = Math.min(BASE_DELAY * 2 ** h.attempt + Math.random() * 500, MAX_DELAY)
       h.attempt++
       h.reconnectTimer = setTimeout(() => {
@@ -111,23 +122,37 @@ export function useAdminSse(options = {}) {
 
   function closeAll() {
     for (const [, h] of handles) {
-      if (h.reconnectTimer) clearTimeout(h.reconnectTimer)
+      if (h.reconnectTimer != null) {
+        clearTimeout(h.reconnectTimer)
+        h.reconnectTimer = null
+      }
       if (h.emitter) {
         try { h.emitter.close() } catch {}
+        h.emitter = null
       }
     }
     handles.clear()
     isConnected.value = false
   }
 
-  // Open all requested streams
-  for (const { topic, callback } of streams) {
-    if (topic && typeof callback === 'function') {
-      open(topic, callback)
-    }
+  function init() {
+    closeAll()
+    streams.forEach(({ topic, callback }) => open(topic, callback))
   }
 
-  onUnmounted(closeAll)
+  init()
 
-  return { isConnected, lastError, close: closeAll }
+  watch(() => auth.token, (newToken) => {
+    if (newToken) {
+      init()
+    } else {
+      closeAll()
+    }
+  })
+
+  onUnmounted(() => {
+    closeAll()
+  })
+
+  return { isConnected, lastError }
 }

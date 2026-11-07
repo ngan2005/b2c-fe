@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { cartService } from '@/services/cart.service'
 import { useAuthStore } from '@/stores/auth'
+import { useNotifyStore } from '@/stores/notify'
 
 export const useCartStore = defineStore('cart', () => {
   const items = ref([])
@@ -41,7 +42,10 @@ export const useCartStore = defineStore('cart', () => {
       await cartService.addItem({ variantId, quantity })
       await fetchCart()
       return true
-    } catch (_) {
+    } catch (err) {
+      const msg = err.response?.data?.message || err.message || 'Không thể thêm vào giỏ hàng'
+      const notify = useNotifyStore()
+      notify.push(msg === 'Requested quantity not available' ? 'Số lượng yêu cầu vượt quá tồn kho khả dụng!' : msg, 'danger')
       return false
     }
   }
@@ -50,14 +54,29 @@ export const useCartStore = defineStore('cart', () => {
     try {
       await cartService.updateItem(cartItemId, { quantity, isSelected })
       await fetchCart()
-    } catch (_) {}
+      return true
+    } catch (err) {
+      const msg = err.response?.data?.message || err.message || 'Không thể cập nhật giỏ hàng'
+      const notify = useNotifyStore()
+      notify.push(msg === 'Requested quantity not available' ? 'Số lượng yêu cầu vượt quá tồn kho khả dụng!' : msg, 'warning')
+      await fetchCart()
+      return false
+    }
   }
 
   async function removeItem(cartItemId) {
     try {
       await cartService.removeItem(cartItemId)
       await fetchCart()
-    } catch (_) {}
+      const notify = useNotifyStore()
+      notify.push('Đã xóa sản phẩm khỏi giỏ hàng', 'info')
+      return true
+    } catch (err) {
+      const msg = err.response?.data?.message || err.message || 'Không thể xóa sản phẩm'
+      const notify = useNotifyStore()
+      notify.push(msg, 'danger')
+      return false
+    }
   }
 
   function clearCart() {

@@ -99,20 +99,29 @@
 
               <!-- Price row (no box, inline) -->
               <div class="pd-price-row">
-                <span class="pd-price-sale">{{ formatCurrency(displayPrice) }}</span>
-                <span v-if="displayOriginal > displayPrice" class="pd-price-original">
-                  {{ formatCurrency(displayOriginal) }}
-                </span>
-                <span v-if="discountPct > 0" class="pd-price-pct">-{{ discountPct }}%</span>
+                <template v-if="!selectedVariant && product.maxPrice && product.maxPrice > product.minPrice">
+                  <span class="pd-price-sale">
+                    {{ formatCurrency(product.minPrice) }} - {{ formatCurrency(product.maxPrice) }}
+                  </span>
+                </template>
+                <template v-else>
+                  <span class="pd-price-sale">{{ formatCurrency(displayPrice) }}</span>
+                  <span v-if="displayOriginal > displayPrice" class="pd-price-original">
+                    {{ formatCurrency(displayOriginal) }}
+                  </span>
+                  <span v-if="discountPct > 0" class="pd-price-pct">-{{ discountPct }}%</span>
+                </template>
               </div>
 
               <!-- Variant -->
               <div v-if="product.variants?.length > 0" class="pd-block">
                 <VariantSelector
                   :variants="product.variants || []"
+                  :options="product.options || []"
                   :model-value="selectedAttributeValues"
                   :base-price="product.minPrice || product.price || 0"
                   @update:model-value="onVariantSelected"
+                  @image-selected="img => { if (img) selectedImage = img }"
                 />
               </div>
 
@@ -582,7 +591,12 @@ const imagesList = computed(() => {
 
 const productHasVariants = computed(() => {
   if (!product.value?.variants?.length) return false
-  return product.value.variants.some(v => v.attributeName && v.attributeValue)
+  if (product.value?.options?.length > 0) return true
+  if (product.value.variants.length > 1) return true
+  return product.value.variants.some(v =>
+    (v.attributes && Object.keys(v.attributes).length > 0) ||
+    (v.attributeName && v.attributeValue)
+  )
 })
 
 const discountPct = computed(() => {
@@ -631,8 +645,17 @@ const specsList = computed(() => {
 })
 
 const onVariantSelected = (payload) => {
-  if (!payload || payload._partial) { selectedVariant.value = null; return }
+  if (!payload || payload._partial) {
+    selectedVariant.value = null
+    if (payload?.imageUrl) {
+      selectedImage.value = payload.imageUrl
+    }
+    return
+  }
   selectedVariant.value = payload
+  if (payload.imageUrl) {
+    selectedImage.value = payload.imageUrl
+  }
 }
 
 const fetchProduct = async () => {

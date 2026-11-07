@@ -1,7 +1,7 @@
 <template>
   <!-- [VARIANT-FIX] VariantSelector -->
   <div>
-    <!-- Has meaningful variant groups (attributeName + attributeValue) -->
+    <!-- Has meaningful variant groups (options or attribute groups) -->
     <div v-if="hasGroups">
       <div
         v-for="group in optionGroups"
@@ -10,9 +10,9 @@
       >
         <!-- Group label row -->
         <div class="d-flex align-items-center gap-2 mb-2">
-          <span class="form-label mb-0">{{ group.name }}</span>
-          <span v-if="isGroupSelected(group.name)" style="font-size: 0.65rem; color: var(--pastel-muted);">
-            <i class="bi bi-check2"></i>
+          <span class="form-label mb-0 fw-bold">{{ group.name }}</span>
+          <span v-if="isGroupSelected(group.name)" style="font-size: 0.65rem; color: var(--pastel-coral-dark);">
+            <i class="bi bi-check2-circle"></i> {{ internalSelections[group.name]?.label }}
           </span>
         </div>
 
@@ -24,16 +24,26 @@
             type="button"
             :class="[
               'pill-chip',
-              internalSelections[group.name]?.id === value.id ? 'pill-chip-coral' : ''
+              internalSelections[group.name]?.label === value.label ? 'pill-chip-coral' : '',
+              isValueDisabled(group.name, value) ? 'pill-chip-disabled' : ''
             ]"
-            :style="internalSelections[group.name]?.id !== value.id
+            :disabled="isValueDisabled(group.name, value)"
+            :title="isValueDisabled(group.name, value) ? 'Phân loại này hiện đã hết hàng' : ''"
+            :style="internalSelections[group.name]?.label !== value.label && !isValueDisabled(group.name, value)
               ? 'background:#fff; color:var(--pastel-ink); border:1.5px solid var(--pastel-border); cursor:pointer;'
               : ''"
             @click="pick(group.name, value)"
           >
+            <!-- Option value image thumbnail (e.g. phone color thumbnail) -->
+            <img
+              v-if="value.imageUrl"
+              :src="value.imageUrl"
+              :alt="value.label"
+              class="pill-chip-img"
+            />
             <!-- Color swatch (for hex/named color values) -->
             <span
-              v-if="isColorValue(value.label)"
+              v-else-if="isColorValue(value.label)"
               :style="{
                 width: '0.85rem',
                 height: '0.85rem',
@@ -47,12 +57,18 @@
 
             {{ value.label }}
 
-            <!-- Stock indicator for this value (aggregated across all variants sharing it) -->
+            <!-- Stock indicator for this value -->
             <span
-              v-if="getValueStock(group.name, value.id) > 0"
-              style="font-size: 0.6rem; opacity: 0.75;"
+              v-if="getValueStock(group.name, value) > 0"
+              style="font-size: 0.65rem; opacity: 0.8; margin-left: 4px;"
             >
-              ({{ getValueStock(group.name, value.id) }})
+              ({{ getValueStock(group.name, value) }})
+            </span>
+            <span
+              v-else
+              style="font-size: 0.65rem; color: #dc2626; margin-left: 4px;"
+            >
+              (Hết)
             </span>
           </button>
         </div>
@@ -66,6 +82,9 @@
           <strong :style="fullyMatchedVariant.stockQuantity > 0 ? 'color:var(--pastel-ink);' : 'color:var(--pastel-coral-dark);'">
             {{ fullyMatchedVariant.stockQuantity > 0 ? fullyMatchedVariant.stockQuantity : 'Hết hàng' }}
           </strong>
+          <span v-if="fullyMatchedVariant.weightGram" class="ms-2 text-muted">
+            ({{ fullyMatchedVariant.weightGram }}g)
+          </span>
         </template>
         <template v-else>
           <i class="bi bi-info-circle me-1"></i>
@@ -74,148 +93,261 @@
       </div>
     </div>
 
-    <!-- No attribute groups: flat variants only — show "Default" chip -->
+    <!-- No attribute groups: flat variants -->
+    <div v-else-if="variants && variants.length > 1">
+      <div class="form-label mb-2 fw-bold">Phân loại</div>
+      <div class="d-flex flex-wrap gap-2">
+        <button
+          v-for="v in variants"
+          :key="v.id"
+          type="button"
+          :class="['pill-chip', selectedFlatVariantId === v.id ? 'pill-chip-coral' : '']"
+          :style="selectedFlatVariantId !== v.id ? 'background:#fff; color:var(--pastel-ink); border:1.5px solid var(--pastel-border); cursor:pointer;' : ''"
+          @click="pickFlat(v)"
+        >
+          {{ v.variantName || 'Mẫu ' + v.id }} — {{ formatCurrency(v.salePrice || v.price) }} (Kho: {{ v.stockQuantity || 0 }})
+        </button>
+      </div>
+    </div>
+
+    <!-- Single default variant / simple product -->
     <div v-else>
-      <div class="form-label">Phân loại</div>
+      <div class="form-label mb-2 fw-bold">Phân loại</div>
       <button type="button" class="pill-chip pill-chip-coral" style="cursor: default;">
-        <i class="bi bi-circle"></i> Default — {{ formatCurrency(basePrice) }}
+        <i class="bi bi-check2"></i> Mặc định — {{ formatCurrency(variants[0]?.salePrice || variants[0]?.price || basePrice) }}
       </button>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 
 const props = defineProps({
-  /**
-   * Array of variant objects from the product.
-   * Shape: { id, variantName, salePrice, price, stockQuantity, attributeName, attributeValue, attributeValueId }
-   */
   variants: { type: Array, default: () => [] },
-  /** Not used for grouped variants — kept for compatibility; emits full variant on complete selection */
+  options: { type: Array, default: () => [] },
   modelValue: { type: Object, default: null },
-  /** Product's base price, shown when there are no variants */
   basePrice: { type: Number, default: 0 },
 })
 
-const emit = defineEmits(['update:modelValue'])
+const emit = defineEmits(['update:modelValue', 'image-selected'])
 
-// ── State ────────────────────────────────────────────────────────
-
-/** Internal per-group selection map: { groupName: { id, label, raw } } */
 const internalSelections = ref({})
+const selectedFlatVariantId = ref(null)
 
-// Reset internal state when variants change (product switch)
-watch(() => props.variants, () => {
+// Reset internal state when variants change
+watch(() => [props.variants, props.options], () => {
   internalSelections.value = {}
+  selectedFlatVariantId.value = null
+  initSingle()
 })
 
-// ── Derived data ─────────────────────────────────────────────────
+onMounted(() => {
+  initSingle()
+})
 
-/** True when variants have real attribute groups (attributeName + attributeValue on variants) */
-const hasGroups = computed(() =>
-  props.variants && props.variants.length > 0 &&
-  props.variants.some(v => v.attributeName && v.attributeValue)
-)
+function initSingle() {
+  if (props.variants?.length === 1 && optionGroups.value.length === 0) {
+    emit('update:modelValue', props.variants[0])
+  }
+}
+
+function matchesGroupValue(v, groupName, targetLabel) {
+  if (!v || !targetLabel) return false
+  const target = targetLabel.toLowerCase()
+  if (v.attributes && v.attributes[groupName] !== undefined) {
+    return (v.attributes[groupName] || '').toLowerCase() === target
+  }
+  if (v.attributeName && v.attributeName.toLowerCase() === groupName.toLowerCase()) {
+    return (v.attributeValue || '').toLowerCase() === target
+  }
+  if (v.variantName) {
+    return v.variantName.toLowerCase().includes(target)
+  }
+  return false
+}
 
 /**
- * Grouped option values derived from variants.
- * Each group: { name: string, values: [{ id, label, raw }] }
- *   id = attributeValueId, label = display text
+ * Option groups derived from props.options or variants.attributes or variants.attributeName
  */
 const optionGroups = computed(() => {
-  if (!hasGroups.value) return []
-  const groups = {}
-  for (const v of props.variants) {
-    if (!v.attributeName || !v.attributeValue) continue
-    if (!groups[v.attributeName]) {
-      groups[v.attributeName] = { name: v.attributeName, values: [] }
-    }
-    const existing = groups[v.attributeName].values.find(x => x.id === v.attributeValueId)
-    if (!existing) {
-      groups[v.attributeName].values.push({
-        id: v.attributeValueId,
-        label: v.attributeValue,
-        raw: v.attributeValue,
+  if (props.options && props.options.length > 0) {
+    return props.options.map(opt => ({
+      name: opt.name,
+      values: (opt.values || []).map(val => {
+        const valLabel = val.value || val.label
+        let img = val.imageUrl || null
+        if (!img && props.variants?.length) {
+          const matchingV = props.variants.find(v => matchesGroupValue(v, opt.name, (valLabel || '').toLowerCase()))
+          if (matchingV?.imageUrl) {
+            img = matchingV.imageUrl
+          }
+        }
+        return {
+          id: val.id || valLabel,
+          label: valLabel,
+          raw: valLabel,
+          imageUrl: img,
+        }
       })
+    }))
+  }
+
+  const groups = {}
+  for (const v of props.variants || []) {
+    if (v.attributes && typeof v.attributes === 'object' && Object.keys(v.attributes).length > 0) {
+      for (const [attrName, attrVal] of Object.entries(v.attributes)) {
+        if (!groups[attrName]) groups[attrName] = { name: attrName, values: [] }
+        if (!groups[attrName].values.some(x => x.label === attrVal)) {
+          groups[attrName].values.push({
+            id: attrVal,
+            label: attrVal,
+            raw: attrVal,
+            imageUrl: v.imageUrl || null,
+          })
+        }
+      }
+    } else if (v.attributeName && v.attributeValue) {
+      if (!groups[v.attributeName]) groups[v.attributeName] = { name: v.attributeName, values: [] }
+      if (!groups[v.attributeName].values.some(x => x.id === v.attributeValueId)) {
+        groups[v.attributeName].values.push({
+          id: v.attributeValueId || v.attributeValue,
+          label: v.attributeValue,
+          raw: v.attributeValue,
+          imageUrl: v.imageUrl || null,
+        })
+      }
     }
   }
   return Object.values(groups)
 })
 
-/** True when a group has a selection made */
+const hasGroups = computed(() => optionGroups.value.length > 0)
+
 function isGroupSelected(groupName) {
   return !!internalSelections.value[groupName]
 }
 
-/** Total stock across all variants that share a given value id within a group */
-function getValueStock(groupName, valueId) {
-  const matching = props.variants.filter(
-    v => v.attributeName === groupName && v.attributeValueId === valueId
-  )
+function isValueDisabled(groupName, value) {
+  const targetLabel = (value.label || value).toLowerCase()
+  const otherSelected = Object.entries(internalSelections.value).filter(([g]) => g !== groupName)
+
+  const matchingVariants = (props.variants || []).filter(v => {
+    if (!matchesGroupValue(v, groupName, targetLabel)) return false
+    for (const [otherG, otherVal] of otherSelected) {
+      const otherLabel = (otherVal.label || otherVal).toLowerCase()
+      if (!matchesGroupValue(v, otherG, otherLabel)) return false
+    }
+    return true
+  })
+
+  if (matchingVariants.length === 0) return true
+  const totalStock = matchingVariants.reduce((sum, v) => sum + (v.stockQuantity || 0), 0)
+  return totalStock <= 0
+}
+
+function getValueStock(groupName, value) {
+  const targetLabel = (value.label || value).toLowerCase()
+  const matching = (props.variants || []).filter(v => {
+    return matchesGroupValue(v, groupName, targetLabel)
+  })
   return matching.reduce((sum, v) => sum + (v.stockQuantity || 0), 0)
 }
 
-// ── Selection logic ──────────────────────────────────────────────
-
 function pick(groupName, value) {
-  // Store the pick
+  // If clicking an already selected chip -> toggle off
+  if (internalSelections.value[groupName]?.label === value.label) {
+    const next = { ...internalSelections.value }
+    delete next[groupName]
+    internalSelections.value = next
+    emit('update:modelValue', null)
+    return
+  }
+
   internalSelections.value = {
     ...internalSelections.value,
     [groupName]: value,
   }
 
-  // Check if all groups are now selected
+  // If this value has an image, emit image-selected immediately
+  if (value.imageUrl) {
+    emit('image-selected', value.imageUrl)
+  }
+
   const allGroups = optionGroups.value
   if (allGroups.length === 0) {
     emit('update:modelValue', null)
     return
   }
 
-  const selectedGroupNames = Object.keys(internalSelections.value)
-  if (selectedGroupNames.length < allGroups.length) {
-    // Not complete yet — emit partial info
+  const selectedCount = Object.keys(internalSelections.value).length
+  if (selectedCount < allGroups.length) {
     emit('update:modelValue', {
       attributeName: groupName,
-      attributeValueId: value.id,
       attributeValue: value.label,
+      imageUrl: value.imageUrl,
       _partial: true,
     })
     return
   }
 
-  // All groups selected — find the matching full variant record
-  const variant = props.variants.find(v => {
-    return allGroups.every(g => {
-      const sel = internalSelections.value[g.name]
-      return sel && v.attributeName === g.name && v.attributeValueId === sel.id
-    })
-  })
-
-  // Emit the complete variant (or the partial if no match)
-  emit('update:modelValue', variant || {
+  const matched = findMatchingVariant()
+  if (matched?.imageUrl) {
+    emit('image-selected', matched.imageUrl)
+  }
+  emit('update:modelValue', matched || {
     attributeName: groupName,
-    attributeValueId: value.id,
     attributeValue: value.label,
+    imageUrl: value.imageUrl,
     _partial: true,
   })
 }
 
-/** The fully matched variant (all groups selected, match found) */
-const fullyMatchedVariant = computed(() => {
+function pickFlat(v) {
+  if (selectedFlatVariantId.value === v.id) {
+    selectedFlatVariantId.value = null
+    emit('update:modelValue', null)
+    return
+  }
+  selectedFlatVariantId.value = v.id
+  if (v.imageUrl) {
+    emit('image-selected', v.imageUrl)
+  }
+  emit('update:modelValue', v)
+}
+
+function findMatchingVariant() {
   const allGroups = optionGroups.value
   if (allGroups.length === 0) return null
-  if (Object.keys(internalSelections.value).length < allGroups.length) return null
-  return props.variants.find(v => {
+
+  return (props.variants || []).find(v => {
     return allGroups.every(g => {
       const sel = internalSelections.value[g.name]
-      return sel && v.attributeName === g.name && v.attributeValueId === sel.id
+      if (!sel) return false
+      const selLabel = (sel.label || '').toLowerCase()
+
+      if (v.attributes && v.attributes[g.name] !== undefined) {
+        return v.attributes[g.name].toLowerCase() === selLabel
+      }
+      if (v.optionValueIds && typeof sel.id === 'number') {
+        return v.optionValueIds.includes(sel.id)
+      }
+      if (v.attributeName === g.name) {
+        return (v.attributeValue || '').toLowerCase() === selLabel
+      }
+      if (v.variantName) {
+        return v.variantName.toLowerCase().includes(selLabel)
+      }
+      return false
     })
   }) || null
-})
+}
 
-// ── Color helpers ────────────────────────────────────────────────
+const fullyMatchedVariant = computed(() => {
+  if (!hasGroups.value) return null
+  if (Object.keys(internalSelections.value).length < optionGroups.value.length) return null
+  return findMatchingVariant()
+})
 
 function isColorValue(label) {
   if (!label) return false
@@ -250,8 +382,49 @@ function normalizeColor(label) {
   return map[s] || '#ccc'
 }
 
-// ── Utility ──────────────────────────────────────────────────────
 function formatCurrency(val) {
   return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val || 0)
 }
 </script>
+
+<style scoped>
+.pill-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.45rem 0.85rem;
+  border-radius: 9999px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  transition: all 0.18s ease;
+  user-select: none;
+}
+.pill-chip:hover:not(:disabled) {
+  border-color: var(--pastel-coral, #ff6b6b) !important;
+  color: var(--pastel-coral-dark, #e05353) !important;
+}
+.pill-chip-coral {
+  background: rgba(255, 107, 107, 0.12) !important;
+  color: var(--pastel-coral-dark, #e05353) !important;
+  border: 1.5px solid var(--pastel-coral, #ff6b6b) !important;
+  font-weight: 700;
+  box-shadow: 0 2px 6px rgba(255, 107, 107, 0.15);
+}
+.pill-chip-disabled {
+  opacity: 0.45 !important;
+  cursor: not-allowed !important;
+  text-decoration: line-through !important;
+  background: #f1f5f9 !important;
+  border: 1.5px dashed #cbd5e1 !important;
+  color: #94a3b8 !important;
+  box-shadow: none !important;
+}
+.pill-chip-img {
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 4px;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 1px solid rgba(0,0,0,0.1);
+}
+</style>

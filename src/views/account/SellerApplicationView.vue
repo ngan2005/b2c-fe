@@ -96,13 +96,32 @@
 
           <!-- Form fields -->
           <BaseInput v-model="form.shopName" label="Tên gian hàng / Shop Name" placeholder="Ví dụ: Shop Thời Trang ABC" required />
+
+          <!-- FIX: Changed PERSONAL -> INDIVIDUAL to match backend BusinessType enum -->
           <BaseSelect v-model="form.businessType" label="Loại hình kinh doanh"
             :options="[
-              { value: 'PERSONAL', label: 'Cá nhân / Hộ kinh doanh' },
+              { value: 'INDIVIDUAL', label: 'Cá nhân / Hộ kinh doanh' },
               { value: 'COMPANY', label: 'Doanh nghiệp / Công ty' }
             ]" required />
-          <BaseInput v-model="form.taxCode" label="Mã số thuế (nếu có)" placeholder="0123456789" />
-          <BaseInput v-model="form.idCardNumber" label="Số CMND / CCCD" placeholder="012345678912" required />
+
+          <!-- FIX: Added phone field (required by CreateSellerApplicationRequest) -->
+          <BaseInput
+            v-if="formMode === 'new'"
+            v-model="form.phone"
+            label="Số điện thoại liên hệ"
+            placeholder="Ví dụ: 0901234567"
+            required />
+
+          <!-- FIX: Added address field (required by CreateSellerApplicationRequest) -->
+          <BaseInput
+            v-if="formMode === 'new'"
+            v-model="form.address"
+            label="Địa chỉ kho / Gian hàng"
+            placeholder="Ví dụ: 123 Lê Lợi, Quận 1, TP.HCM"
+            required />
+
+          <BaseInput v-model="form.idCardNumber" label="Số CMND / CCCD (tùy chọn)" placeholder="012345678912" />
+
           <div>
             <label class="form-label">Giới thiệu gian hàng</label>
             <textarea v-model="form.description" class="form-control" rows="3"
@@ -112,8 +131,7 @@
           <div class="d-flex justify-content-end gap-3 pt-3" style="border-top: 1.5px solid var(--pastel-border);">
             <router-link :to="{ name: 'home' }" class="btn-pastel text-decoration-none" style="font-size: 0.875rem; padding: 0.5rem 1rem;">Hủy</router-link>
             <button type="submit" class="btn-coral d-flex align-items-center gap-2"
-              :loading="submitting"
-              :disabled="formMode === 'upgrade' && !upgradeConfirmed"
+              :disabled="submitting || (formMode === 'upgrade' && !upgradeConfirmed)"
               style="font-size: 0.875rem; padding: 0.5rem 1.25rem;">
               <i class="bi bi-send"></i> {{ formMode === 'upgrade' ? 'Nâng Cấp Ngay' : 'Gửi Hồ Sơ Xét Duyệt' }}
             </button>
@@ -144,20 +162,32 @@ const upgradeConfirmed = ref(false)
 
 const form = reactive({
   shopName: '',
-  businessType: 'PERSONAL',
-  taxCode: '',
+  businessType: 'INDIVIDUAL',   // FIX: was 'PERSONAL', must match backend enum BusinessType.INDIVIDUAL
+  phone: '',                     // FIX: added — required by CreateSellerApplicationRequest
+  address: '',                   // FIX: added — required by CreateSellerApplicationRequest
   idCardNumber: '',
   description: '',
 })
 
 const handleSubmit = async () => {
-  if (!form.shopName || !form.idCardNumber) { notify.push('Vui lòng điền đầy đủ các thông tin bắt buộc!', 'warning'); return }
+  // FIX: validate phone + address for 'new' (submit) mode
+  if (!form.shopName) { notify.push('Vui lòng nhập tên gian hàng!', 'warning'); return }
+  if (formMode.value === 'new') {
+    if (!form.phone) { notify.push('Vui lòng nhập số điện thoại liên hệ!', 'warning'); return }
+    if (!form.address) { notify.push('Vui lòng nhập địa chỉ kho / gian hàng!', 'warning'); return }
+  }
+
   submitting.value = true
   try {
     if (formMode.value === 'upgrade') {
+      // POST /api/v1/seller-applications/quick-upgrade
       const data = await sellerApplicationService.quickUpgrade({
-        shopName: form.shopName, businessType: form.businessType,
-        shopDescription: form.description, idCardNumber: form.idCardNumber,
+        shopName: form.shopName,
+        businessType: form.businessType,
+        shopDescription: form.description,
+        idCardNumber: form.idCardNumber || undefined,
+        phone: form.phone || undefined,
+        address: form.address || undefined,
       })
       auth.setSession(data.accessToken, {
         id: data.userId, email: data.email, fullName: data.fullName,
@@ -166,16 +196,22 @@ const handleSubmit = async () => {
       wasUpgraded.value = true; submitted.value = true
       notify.push('Đã nâng cấp thành Seller!', 'success')
     } else {
+      // POST /api/v1/seller-applications
       await sellerApplicationService.submit({
-        shopName: form.shopName, businessType: form.businessType,
-        taxCode: form.taxCode, idCardNumber: form.idCardNumber, description: form.description,
+        shopName: form.shopName,
+        businessType: form.businessType,
+        shopDescription: form.description,
+        phone: form.phone,
+        address: form.address,
       })
       wasUpgraded.value = false; submitted.value = true
       notify.push('Đơn đăng ký Seller đã được gửi!', 'success')
     }
   } catch (err) {
-    const isConflict = err?.response?.status === 409
-    if (isConflict) notify.push('Bạn đã là Seller hoặc đã có đơn đăng ký đang chờ duyệt.', 'warning')
+    const status = err?.response?.status
+    if (status === 409) notify.push('Bạn đã là Seller hoặc đã có đơn đăng ký đang chờ duyệt.', 'warning')
+    else if (status === 400) notify.push('Thông tin không hợp lệ. Vui lòng kiểm tra lại các trường bắt buộc.', 'danger')
+    else if (status === 403) notify.push('Tài khoản của bạn không có quyền đăng ký Seller. Vui lòng đăng nhập lại.', 'danger')
     else notify.push('Không thể gửi đơn đăng ký. Vui lòng thử lại.', 'danger')
   } finally { submitting.value = false }
 }

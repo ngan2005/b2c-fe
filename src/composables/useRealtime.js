@@ -1,31 +1,27 @@
 /**
- * useRealtime.js — STOMP/SockJS composable for admin real-time events.
+ * useRealtime.js — STOMP/SockJS composable for real-time events.
  *
  * Usage:
  *   const { isConnected, lastError } = useRealtime({
  *     topics: [
- *       { destination: '/topic/admin/dashboard',     callback: (msg) => {} },
- *       { destination: '/topic/admin/seller-applications', callback: (msg) => {} },
- *       { destination: '/topic/admin/orders',        callback: (msg) => {} },
- *       { destination: '/topic/admin/returns',       callback: (msg) => {} },
+ *       { destination: '/topic/admin/dashboard', callback: (msg) => {} },
+ *       { destination: '/topic/admin/presence',  callback: (msg) => {} },
  *     ]
  *   })
  *
- * The composable reads the JWT from the auth store, connects on mount,
- * auto-reconnects with exponential backoff on disconnect, and tears down
- * cleanly on unmount.
+ * Connects to /ws via STOMP/SockJS with JWT auth (when logged in) or anonymously.
+ * Auto-reconnects with exponential backoff on disconnect, and reacts to token changes.
  */
-import { ref, onUnmounted } from 'vue'
+import { ref, onUnmounted, watch } from 'vue'
 import { Client } from '@stomp/stompjs'
 import SockJS from 'sockjs-client'
 import { useAuthStore } from '@/stores/auth'
 
-// Resolve VITE_API_BASE from the same base used by axios in useApi.js
+// Resolve API origin (e.g. http://localhost:8080)
 const API_ORIGIN = new URL(
   import.meta.env.VITE_API_BASE || 'http://localhost:8080/api/v1',
 ).origin
 
-// Exponential back-off delays (ms) — cycles up to MAX_DELAY
 const BASE_DELAY = 1000
 const MAX_DELAY = 30_000
 
@@ -39,10 +35,7 @@ export function useRealtime(options = {}) {
   let stompClient = null
   let reconnectTimer = null
   let attempt = 0
-
-  // ------------------------------------------------------------------
-  // Internal helpers
-  // ------------------------------------------------------------------
+  let isExplicitlyClosed = false
 
   function parseMessage(raw) {
     try {
@@ -60,46 +53,37 @@ export function useRealtime(options = {}) {
   }
 
   function scheduleReconnect() {
-    clearReconnectTimer()
-    // Exponential back-off with jitter
+    if (isExplicitlyClosed) return
+    if (reconnectTimer != null) return // Avoid duplicate scheduling
+
     const delay = Math.min(BASE_DELAY * 2 ** attempt + Math.random() * 500, MAX_DELAY)
     attempt++
     reconnectTimer = setTimeout(() => {
+      reconnectTimer = null
       connect()
     }, delay)
   }
 
-  // ------------------------------------------------------------------
-  // Connect / disconnect
-  // ------------------------------------------------------------------
-
   function connect() {
+    if (isExplicitlyClosed) return
     if (stompClient && stompClient.connected) return
 
     const token = auth.token
-    if (!token) {
-      // Not logged in — silently skip
-      return
-    }
-
-    // Build the SockJS URL with JWT query param
-    const wsUrl = `${API_ORIGIN}/ws?token=${encodeURIComponent(token)}`
+    const wsUrl = token
+      ? `${API_ORIGIN}/ws?token=${encodeURIComponent(token)}`
+      : `${API_ORIGIN}/ws`
 
     stompClient = new Client({
-      webSocketFactory: () => new SockJS(wsUrl, null, {
-        transports: ['websocket', 'xhr-polling'],
-      }),
-      // Minimal STOMP frame settings
-      connectHeaders: {},
+      webSocketFactory: () => new SockJS(wsUrl),
+      connectHeaders: token ? { Authorization: `Bearer ${token}` } : {},
       heartbeatIncoming: 10_000,
       heartbeatOutgoing: 10_000,
-      reconnectDelay: 0, // We handle reconnection manually for back-off control
+      reconnectDelay: 0, // We control reconnection with exponential backoff
       onConnect: () => {
         isConnected.value = true
         lastError.value = null
         attempt = 0
 
-        // Subscribe to all topics
         topics.forEach(({ destination, callback }) => {
           stompClient.subscribe(destination, (frame) => {
             callback(parseMessage(frame.body))
@@ -130,19 +114,26 @@ export function useRealtime(options = {}) {
   function disconnect() {
     clearReconnectTimer()
     if (stompClient) {
-      stompClient.deactivate()
+      try {
+        stompClient.deactivate()
+      } catch {}
       stompClient = null
     }
     isConnected.value = false
   }
 
-  // ------------------------------------------------------------------
-  // Lifecycle
-  // ------------------------------------------------------------------
-
   connect()
 
+  // React to login/logout or token refresh
+  watch(() => auth.token, (newToken, oldToken) => {
+    if (newToken !== oldToken) {
+      disconnect()
+      connect()
+    }
+  })
+
   onUnmounted(() => {
+    isExplicitlyClosed = true
     disconnect()
   })
 

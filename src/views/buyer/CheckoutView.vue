@@ -141,16 +141,29 @@
               Sản Phẩm Đặt Mua
             </h3>
 
-            <div class="d-flex flex-column gap-2 mb-3" style="max-height: 14rem; overflow-y: auto;">
-              <div v-for="item in selectedCartItems" :key="item.id" class="d-flex align-items-center gap-2">
-                <img :src="item.thumbnailUrl || item.imageUrl || placeholderImg" style="width: 3rem; height: 3rem; object-fit: cover; border-radius: 8px; border: 1px solid var(--nomall-border); flex-shrink: 0;" />
-                <div class="flex-grow-1 min-w-0">
-                  <p class="mb-0 fw-bold truncate" style="font-size: 0.8125rem; color: var(--nomall-ink);">{{ item.productName }}</p>
-                  <span style="font-size: 0.75rem; color: var(--nomall-muted);">SL: {{ item.quantity }}</span>
+            <div class="d-flex flex-column gap-3 mb-3" style="max-height: 18rem; overflow-y: auto;">
+              <div
+                v-for="(shop, sIdx) in checkoutShopGroups"
+                :key="shop.sellerId"
+                class="p-2 rounded border"
+                style="background: #fafafa;"
+              >
+                <div class="d-flex align-items-center gap-2 mb-2 pb-1 border-bottom" style="font-size: 0.8125rem;">
+                  <i class="bi bi-box-seam text-danger"></i>
+                  <span class="fw-bold text-dark">Gói {{ sIdx + 1 }}: {{ shop.shopName }}</span>
+                  <span v-if="checkoutShopGroups.length > 1" class="badge bg-secondary-subtle text-secondary small ms-auto">Tách đơn</span>
                 </div>
-                <span class="fw-bold" style="font-size: 0.875rem; color: var(--nomall-ink); flex-shrink: 0;">
-                  {{ formatCurrency(item.priceSnapshot * item.quantity) }}
-                </span>
+                <div v-for="item in shop.items" :key="item.id" class="d-flex align-items-center gap-2 mb-2">
+                  <img :src="item.thumbnailUrl || item.imageUrl || placeholderImg" style="width: 2.75rem; height: 2.75rem; object-fit: cover; border-radius: 6px; border: 1px solid var(--nomall-border); flex-shrink: 0;" />
+                  <div class="flex-grow-1 min-w-0">
+                    <p class="mb-0 fw-bold truncate" style="font-size: 0.8125rem; color: var(--nomall-ink);">{{ item.productName }}</p>
+                    <span v-if="item.variantName" class="badge bg-white text-muted border small me-1" style="font-size: 0.6875rem;">{{ item.variantName }}</span>
+                    <span style="font-size: 0.75rem; color: var(--nomall-muted);">x{{ item.quantity }}</span>
+                  </div>
+                  <span class="fw-bold" style="font-size: 0.8125rem; color: var(--nomall-red); flex-shrink: 0;">
+                    {{ formatCurrency(item.priceSnapshot * item.quantity) }}
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -503,6 +516,22 @@ const paymentMethods = [
 ]
 
 const selectedCartItems = computed(() => cartStore.items.filter(i => i.isSelected !== false))
+
+const checkoutShopGroups = computed(() => {
+  const groups = {}
+  for (const item of selectedCartItems.value) {
+    const sId = item.sellerId || 0
+    if (!groups[sId]) {
+      groups[sId] = {
+        sellerId: sId,
+        shopName: item.shopName || 'Gian hàng đối tác',
+        items: [],
+      }
+    }
+    groups[sId].items.push(item)
+  }
+  return Object.values(groups)
+})
 
 const fetchAddresses = async () => {
   loadingAddresses.value = true

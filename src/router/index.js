@@ -131,6 +131,7 @@ const routes = [
       { path: 'finance', name: 'admin-finance', component: () => import('@/views/admin/FinanceView.vue') },
       { path: 'commission-rules', name: 'admin-commission-rules', component: () => import('@/views/admin/CommissionRulesView.vue') },
       { path: 'disputes', name: 'admin-disputes', component: () => import('@/views/admin/DisputesView.vue') },
+      { path: 'reviews', name: 'admin-reviews', component: () => import('@/views/admin/ReviewsView.vue') },
     ],
   },
 

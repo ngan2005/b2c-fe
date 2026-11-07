@@ -142,12 +142,29 @@ onMounted(load)
               <!-- Product -->
               <td class="px-3.5 py-3">
                 <div class="d-flex align-items-center gap-2">
-                  <div class="bg-indigo-50 text-indigo-600 rounded-xl d-flex align-items-center justify-content-center" style="width:40px;height:40px;">
+                  <img
+                    v-if="r.productThumbnail"
+                    :src="r.productThumbnail"
+                    alt=""
+                    class="rounded-xl border border-slate-200"
+                    style="width:40px;height:40px;object-fit:cover;"
+                  />
+                  <div v-else class="bg-indigo-50 text-indigo-600 rounded-xl d-flex align-items-center justify-content-center" style="width:40px;height:40px;">
                     <i class="bi bi-box-seam"></i>
                   </div>
                   <div>
-                    <div class="small fw-bold text-slate-800" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-                      Sản phẩm #{{ r.productId }}
+                    <router-link
+                      v-if="r.productSlug"
+                      :to="`/products/${r.productSlug}`"
+                      target="_blank"
+                      class="small fw-bold text-slate-800 text-decoration-none hover:text-indigo-600 d-block text-truncate"
+                      style="max-width:160px;"
+                      :title="r.productName || `Sản phẩm #${r.productId}`"
+                    >
+                      {{ r.productName || `Sản phẩm #${r.productId}` }}
+                    </router-link>
+                    <div v-else class="small fw-bold text-slate-800" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                      {{ r.productName || `Sản phẩm #${r.productId}` }}
                     </div>
                   </div>
                 </div>
