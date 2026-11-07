@@ -76,6 +76,181 @@
           </div>
         </div>
       </div>
+
+      <!-- Row 4: Payout Management & Escrow Auditing -->
+      <div class="card border-0 shadow-sm rounded-2xl overflow-hidden">
+        <div class="card-header bg-white py-3.5 px-4 d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 border-bottom">
+          <div>
+            <div class="fw-bold text-slate-800 d-flex align-items-center gap-2">
+              <i class="bi bi-wallet2 text-indigo-600"></i>
+              <span>Sổ Cái Đối Soát & Giải Ngân Cho Seller</span>
+              <span class="badge bg-indigo-50 text-indigo-700 text-xs font-mono">Escrow Settlement</span>
+            </div>
+            <div class="text-xs text-slate-400 mt-0.5">Xử lý yêu cầu rút tiền của Seller và ghi nhận mã đối soát ngân hàng</div>
+          </div>
+
+          <!-- Status Filters -->
+          <div class="d-flex align-items-center gap-1.5 flex-wrap">
+            <button
+              v-for="st in payoutStatusTabs"
+              :key="st.value"
+              type="button"
+              class="btn btn-sm rounded-xl px-3 py-1 font-semibold text-xs"
+              :class="selectedPayoutStatus === st.value ? 'btn-dark' : 'btn-outline-secondary'"
+              @click="setPayoutStatus(st.value)"
+            >
+              {{ st.label }}
+            </button>
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-primary rounded-xl px-2.5 py-1"
+              :disabled="payoutsLoading"
+              @click="loadPayouts"
+            >
+              <i class="bi bi-arrow-clockwise" :class="{ 'spin-anim': payoutsLoading }"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0 text-sm">
+            <thead class="bg-slate-50 text-slate-500 text-xs font-semibold uppercase">
+              <tr>
+                <th class="py-3 px-3.5">Mã Phiếu / Ngày</th>
+                <th class="py-3 px-3">Shop / Seller</th>
+                <th class="py-3 px-3">Mã Đơn Hàng</th>
+                <th class="py-3 px-3 text-end">Doanh Thu Gốc</th>
+                <th class="py-3 px-3 text-end">Hoa Hồng Sàn</th>
+                <th class="py-3 px-3 text-end">Tiền Chuyển Seller</th>
+                <th class="py-3 px-3 text-center">Trạng Thái</th>
+                <th class="py-3 px-3.5 text-center">Hành Động</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="payoutsLoading && payouts.length === 0">
+                <td colspan="8" class="text-center py-4 text-slate-400">
+                  <span class="spinner-border spinner-border-sm me-2"></span> Đang tải danh sách quyết toán...
+                </td>
+              </tr>
+              <tr v-else-if="!payoutsLoading && payouts.length === 0">
+                <td colspan="8" class="text-center py-4 text-slate-400">
+                  Không tìm thấy bản ghi quyết toán nào phù hợp.
+                </td>
+              </tr>
+              <tr v-for="p in payouts" :key="p.id">
+                <td class="py-3 px-3.5">
+                  <div class="font-mono font-bold text-slate-800 text-xs">#PAY-{{ String(p.id).padStart(6, '0') }}</div>
+                  <div class="text-[11px] text-slate-400">{{ formatDateTime(p.createdAt) }}</div>
+                </td>
+                <td class="py-3 px-3">
+                  <span class="fw-semibold text-slate-800">{{ p.shopName || ('Seller #' + p.sellerId) }}</span>
+                </td>
+                <td class="py-3 px-3">
+                  <span class="badge bg-slate-100 text-slate-700 font-mono">{{ p.orderCode || ('Đơn #' + p.orderId) }}</span>
+                </td>
+                <td class="py-3 px-3 text-end font-mono text-xs">
+                  {{ formatCurrency(p.grossAmount) }}
+                </td>
+                <td class="py-3 px-3 text-end font-mono text-xs text-rose-500">
+                  -{{ formatCurrency(p.commissionAmount) }}
+                </td>
+                <td class="py-3 px-3 text-end font-mono text-sm font-bold text-emerald-600">
+                  {{ formatCurrency(p.netAmount) }}
+                </td>
+                <td class="py-3 px-3 text-center">
+                  <span class="badge px-2.5 py-1 rounded-full text-xs font-mono" :class="getPayoutBadgeClass(p.status)">
+                    {{ getPayoutLabel(p.status) }}
+                  </span>
+                  <div v-if="p.bankReference" class="text-[10px] font-mono text-slate-400 mt-0.5">
+                    Ref: {{ p.bankReference }}
+                  </div>
+                </td>
+                <td class="py-3 px-3.5 text-center">
+                  <div class="d-inline-flex gap-1.5">
+                    <button
+                      v-if="p.status === 'READY' || p.status === 'PENDING'"
+                      type="button"
+                      class="btn btn-sm btn-success rounded-xl px-2.5 py-1 text-xs fw-semibold d-inline-flex align-items-center gap-1 shadow-xs"
+                      @click="openDisburseModal(p)"
+                    >
+                      <i class="bi bi-send-check"></i>
+                      <span>Giải Ngân</span>
+                    </button>
+                    <span v-else-if="p.status === 'PAID'" class="badge bg-emerald-50 text-emerald-700 text-xs">
+                      <i class="bi bi-check2-all me-1"></i>Đã Chuyển
+                    </span>
+                    <span v-else class="text-slate-400 text-xs">—</span>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Giải Ngân Cho Seller -->
+    <div
+      v-if="showDisburseModal"
+      class="fixed inset-0 z-50 d-flex align-items-center justify-content-center bg-black/40 backdrop-blur-xs p-3"
+    >
+      <div class="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-100 overflow-hidden">
+        <div class="p-4 bg-gradient-to-r from-emerald-600 to-teal-600 text-white d-flex align-items-center justify-content-between">
+          <div class="d-flex align-items-center gap-2">
+            <i class="bi bi-bank text-xl"></i>
+            <h3 class="text-base font-bold mb-0">Xác Nhận Giải Ngân Tiền Cho Seller</h3>
+          </div>
+          <button type="button" class="btn-close btn-close-white" @click="showDisburseModal = false"></button>
+        </div>
+
+        <div class="p-4 space-y-3">
+          <div class="p-3 bg-slate-50 rounded-2xl border border-slate-200">
+            <div class="text-xs text-slate-500 mb-1">Mã Phiếu Quyết Toán</div>
+            <div class="font-mono font-bold text-slate-800">#PAY-{{ String(selectedPayout?.id).padStart(6, '0') }}</div>
+            <div class="d-flex justify-content-between mt-2 text-xs">
+              <span class="text-slate-500">Shop Nhận:</span>
+              <span class="font-semibold text-slate-800">{{ selectedPayout?.shopName || ('Seller #' + selectedPayout?.sellerId) }}</span>
+            </div>
+            <div class="d-flex justify-content-between mt-1 text-xs">
+              <span class="text-slate-500">Số tiền chuyển:</span>
+              <span class="font-mono font-bold text-emerald-600 text-sm">{{ formatCurrency(selectedPayout?.netAmount) }}</span>
+            </div>
+          </div>
+
+          <div>
+            <label class="form-label text-xs font-semibold text-slate-700">Mã Giao Dịch Ngân Hàng (Bank Reference) <span class="text-danger">*</span></label>
+            <input
+              v-model="disburseBankRef"
+              type="text"
+              class="form-control form-control-sm rounded-xl font-mono"
+              placeholder="VD: MB-20261107-987654 hoặc VCB-FT123"
+            />
+            <div class="form-text text-[11px] text-slate-400">
+              Nhập mã ủy nhiệm chi / mã giao dịch chuyển khoản thành công của ngân hàng.
+            </div>
+          </div>
+
+          <div class="d-flex align-items-center justify-content-end gap-2 pt-2">
+            <button
+              type="button"
+              class="btn btn-outline-secondary btn-sm rounded-xl px-3"
+              :disabled="disbursing"
+              @click="showDisburseModal = false"
+            >
+              Hủy
+            </button>
+            <button
+              type="button"
+              class="btn btn-success btn-sm rounded-xl px-4 py-2 font-semibold shadow-xs d-inline-flex align-items-center gap-1.5"
+              :disabled="disbursing || !disburseBankRef.trim()"
+              @click="confirmDisburse"
+            >
+              <span v-if="disbursing" class="spinner-border spinner-border-sm"></span>
+              <span>{{ disbursing ? 'Đang xử lý...' : 'Xác Nhận Đã Chuyển Khoản' }}</span>
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -265,8 +440,107 @@ function formatCurrency(value) {
   return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(value || 0)
 }
 
+function formatDateTime(dt) {
+  if (!dt) return '—'
+  return new Intl.DateTimeFormat('vi-VN', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  }).format(new Date(dt))
+}
+
+// ---------- Payouts management ----------
+const payouts = ref([])
+const payoutsLoading = ref(false)
+const selectedPayoutStatus = ref('')
+const showDisburseModal = ref(false)
+const selectedPayout = ref(null)
+const disburseBankRef = ref('')
+const disbursing = ref(false)
+
+const payoutStatusTabs = [
+  { label: 'Tất Cả', value: '' },
+  { label: 'Chờ Giải Ngân', value: 'READY' },
+  { label: 'Tạm Giữ Escrow', value: 'PENDING' },
+  { label: 'Đã Chuyển Tiền', value: 'PAID' },
+  { label: 'Đã Hủy', value: 'CANCELLED' },
+]
+
+async function loadPayouts() {
+  payoutsLoading.value = true
+  try {
+    const params = { page: 0, size: 30 }
+    if (selectedPayoutStatus.value) {
+      params.status = selectedPayoutStatus.value
+    }
+    const res = await adminFinanceService.listPayouts(params)
+    const pageData = res.data || res
+    payouts.value = pageData.content || pageData.items || []
+  } catch (err) {
+    console.error('Failed to load payouts:', err)
+  } finally {
+    payoutsLoading.value = false
+  }
+}
+
+function setPayoutStatus(status) {
+  if (selectedPayoutStatus.value === status) return
+  selectedPayoutStatus.value = status
+  loadPayouts()
+}
+
+function openDisburseModal(p) {
+  selectedPayout.value = p
+  disburseBankRef.value = 'MB-' + new Date().toISOString().slice(0, 10).replace(/-/g, '') + '-' + Math.floor(100000 + Math.random() * 900000)
+  showDisburseModal.value = true
+}
+
+async function confirmDisburse() {
+  if (!selectedPayout.value || !disburseBankRef.value.trim()) return
+  disbursing.value = true
+  try {
+    await adminFinanceService.markPaid(selectedPayout.value.id, disburseBankRef.value.trim())
+    showDisburseModal.value = false
+    await Promise.all([loadOverview(), loadPayouts()])
+  } catch (err) {
+    console.error('Failed to disburse payout:', err)
+  } finally {
+    disbursing.value = false
+  }
+}
+
+function getPayoutBadgeClass(status) {
+  switch (status) {
+    case 'READY':
+      return 'bg-indigo-100 text-indigo-800 border border-indigo-200'
+    case 'PENDING':
+      return 'bg-amber-100 text-amber-800 border border-amber-200'
+    case 'PAID':
+      return 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+    case 'CANCELLED':
+      return 'bg-slate-100 text-slate-700'
+    default:
+      return 'bg-slate-100 text-slate-600'
+  }
+}
+
+function getPayoutLabel(status) {
+  switch (status) {
+    case 'READY':
+      return 'Chờ Giải Ngân'
+    case 'PENDING':
+      return 'Tạm Giữ Escrow'
+    case 'PAID':
+      return 'Đã Chuyển Khoản'
+    case 'CANCELLED':
+      return 'Đã Hủy'
+    default:
+      return status
+  }
+}
+
 onMounted(async () => {
   await loadOverview()
   loadCharts()
+  loadPayouts()
 })
 </script>

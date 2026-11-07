@@ -251,6 +251,7 @@ const navGroups = [
     items: [
       { name: 'seller-dashboard', label: 'Tổng quan Dashboard', icon: 'bi-grid-1x2-fill' },
       { name: 'seller-stats',    label: 'Thống Kê Doanh Thu', icon: 'bi-graph-up-arrow' },
+      { name: 'seller-wallet',   label: 'Ví & Quyết Toán',    icon: 'bi-wallet2' },
       { name: 'seller-fees',     label: 'Biểu Phí Sàn',       icon: 'bi-percent' },
     ],
   },
