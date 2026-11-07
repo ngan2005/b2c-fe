@@ -107,6 +107,7 @@ const routes = [
       { path: 'reviews', name: 'seller-reviews', component: () => import('@/views/seller/Reviews.vue') },
       { path: 'chat', name: 'seller-chat', component: () => import('@/views/seller/Chat.vue') },
       { path: 'stats', name: 'seller-stats', component: () => import('@/views/seller/Stats.vue') },
+      { path: 'wallet', name: 'seller-wallet', component: () => import('@/views/seller/Wallet.vue') },
       { path: 'fees', name: 'seller-fees', component: () => import('@/views/seller/SellerFeesView.vue') },
       { path: 'profile', name: 'seller-profile', component: () => import('@/views/seller/Profile.vue') },
     ],

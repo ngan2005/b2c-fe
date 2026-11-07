@@ -138,6 +138,8 @@ const formatCurrency = (val) => {
 }
 
 const onImgError = (e) => {
+  if (!e || !e.target) return
+  e.target.onerror = null
   e.target.src = 'https://picsum.photos/seed/' + Math.floor(Math.random() * 1000) + '/400/400'
 }
 
