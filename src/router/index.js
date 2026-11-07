@@ -98,6 +98,7 @@ const routes = [
     children: [
       { path: '', name: 'seller-dashboard', component: () => import('@/views/seller/Dashboard.vue') },
       { path: 'products', name: 'seller-products', component: () => import('@/views/seller/Products.vue') },
+      { path: 'inventory', name: 'seller-inventory', component: () => import('@/views/seller/Inventory.vue') },
       { path: 'products/new', name: 'seller-product-new', component: () => import('@/views/seller/ProductEdit.vue') },
       { path: 'products/:id', name: 'seller-product-edit', component: () => import('@/views/seller/ProductEdit.vue'), props: true },
       { path: 'orders', name: 'seller-orders', component: () => import('@/views/seller/Orders.vue') },

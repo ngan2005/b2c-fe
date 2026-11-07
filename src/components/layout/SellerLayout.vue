@@ -265,6 +265,7 @@ const navGroups = [
     title: 'KHO & SẢN PHẨM',
     items: [
       { name: 'seller-products',  label: 'Quản Lý Sản Phẩm',   icon: 'bi-box-seam-fill' },
+      { name: 'seller-inventory', label: 'Quản Lý Kho Hàng',   icon: 'bi-boxes' },
       { name: 'seller-reviews',   label: 'Đánh Giá Sản Phẩm',  icon: 'bi-star-fill' },
     ],
   },
