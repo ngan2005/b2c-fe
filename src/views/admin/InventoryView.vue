@@ -54,6 +54,7 @@
                   alt=""
                   class="rounded-xl border border-slate-200"
                   style="width: 56px; height: 56px; object-fit: cover;"
+                  @error="onImgError"
                 />
                 <div v-else class="bg-slate-200 rounded-xl d-flex align-items-center justify-content-center text-slate-400" style="width: 56px; height: 56px;">
                   <i class="bi bi-image text-xl"></i>
@@ -738,6 +739,12 @@ function scenarioBadgeVariant(s) {
 function formatDate(d) {
   if (!d) return '—'
   return new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'medium' }).format(new Date(d))
+}
+
+const placeholderSvg = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23f1f5f9'/%3E%3Cpath d='M25 70 L45 45 L60 60 L70 50 L80 70 Z' fill='%23cbd5e1'/%3E%3Ccircle cx='38' cy='35' r='7' fill='%2394a3b8'/%3E%3C/svg%3E"
+
+function onImgError(e) {
+  e.target.src = placeholderSvg
 }
 
 onMounted(() => {

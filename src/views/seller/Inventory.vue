@@ -137,6 +137,12 @@ async function refreshCounters() {
   }
 }
 
+const placeholderSvg = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23f1f5f9'/%3E%3Cpath d='M25 70 L45 45 L60 60 L70 50 L80 70 Z' fill='%23cbd5e1'/%3E%3Ccircle cx='38' cy='35' r='7' fill='%2394a3b8'/%3E%3C/svg%3E"
+
+function onImgError(e) {
+  e.target.src = placeholderSvg
+}
+
 function formatVnd(val) {
   if (val == null) return '0 ₫'
   return new Intl.NumberFormat('vi-VN').format(val) + ' ₫'
@@ -370,6 +376,7 @@ onMounted(() => {
                   alt=""
                   style="width: 44px; height: 44px; object-fit: cover;"
                   class="rounded-xl border border-slate-200"
+                  @error="onImgError"
                 />
                 <div
                   v-else
