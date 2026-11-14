@@ -1,9 +1,16 @@
 <script setup>
-import { ref, onMounted, nextTick, watch } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { chatService } from '@/services/chat.service'
 import { useNotifyStore } from '@/stores/notify'
+import { useAuthStore } from '@/stores/auth'
+import { useRealtime } from '@/composables/useRealtime'
 
 const notify = useNotifyStore()
+const auth = useAuthStore()
+const { isConnected, subscribe } = useRealtime()
+
+let unsubConv = null
+let unsubUser = null
 
 const conversations = ref([])
 const totalPages = ref(0)
@@ -52,9 +59,43 @@ async function loadConversations() {
   }
 }
 
+function setupSocket() {
+  if (unsubConv) { unsubConv(); unsubConv = null; }
+  if (unsubUser) { unsubUser(); unsubUser = null; }
+
+  if (auth.user?.id) {
+    unsubUser = subscribe(`/topic/chat/user/${auth.user.id}`, (envelope) => {
+      handleSocketEnvelope(envelope)
+    })
+  }
+
+  if (activeConv.value?.id) {
+    unsubConv = subscribe(`/topic/chat/conversation/${activeConv.value.id}`, (envelope) => {
+      handleSocketEnvelope(envelope)
+    })
+  }
+}
+
+function handleSocketEnvelope(envelope) {
+  if (!envelope || envelope.type !== 'NEW_MESSAGE') return
+  const msgDto = envelope.message
+  if (!msgDto) return
+
+  if (activeConv.value?.id && Number(envelope.conversationId) === Number(activeConv.value.id)) {
+    const exists = messages.value.some((m) => m.id === msgDto.id)
+    if (!exists) {
+      messages.value.push(msgDto)
+      nextTick(() => scrollToBottom())
+      chatService.markAsRead(activeConv.value.id).catch(() => {})
+    }
+  }
+  loadConversations()
+}
+
 async function selectConversation(conv) {
   activeConv.value = conv
   messages.value = []
+  setupSocket()
   await loadMessages()
 }
 
@@ -109,7 +150,15 @@ function onKeydown(e) {
   }
 }
 
-onMounted(loadConversations)
+onMounted(() => {
+  loadConversations()
+  setupSocket()
+})
+
+onUnmounted(() => {
+  if (unsubConv) unsubConv()
+  if (unsubUser) unsubUser()
+})
 </script>
 
 <template>

@@ -544,12 +544,14 @@ import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import VariantSelector from '@/components/common/VariantSelector.vue'
 import NomallProductCard from '@/components/buyer/ProductCard.vue'
 import { useRealtime } from '@/composables/useRealtime'
+import { useChatModalStore } from '@/stores/chatModal'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const notify = useNotifyStore()
 const cartStore = useCartStore()
+const chatModalStore = useChatModalStore()
 
 const loading = ref(true)
 const loadingRelated = ref(true)
@@ -745,13 +747,30 @@ function formatShopJoin(d) {
   }
 }
 
-function handleChatWithShop() {
+async function handleChatWithShop() {
   if (!auth.isAuthenticated) {
     notify.push('Vui lòng đăng nhập để bắt đầu chat với người bán!', 'warning')
     router.push({ name: 'login', query: { redirect: route.fullPath } })
     return
   }
-  notify.push(`Đang kết nối hội thoại với ${product.value?.shopName || 'Shop'}...`, 'info')
+  if (!product.value?.sellerId) {
+    notify.push('Không tìm thấy thông tin nhà bán hàng!', 'warning')
+    return
+  }
+  await chatModalStore.openChatWithSeller(
+    product.value.sellerId,
+    {
+      shopName: product.value.shopName,
+      shopAvatar: product.value.shopAvatar,
+      shopSlug: product.value.shopSlug,
+    },
+    {
+      id: product.value.id,
+      name: product.value.name,
+      thumbnailUrl: selectedImage.value || product.value.thumbnailUrl,
+      minPrice: selectedVariant.value?.salePrice || selectedVariant.value?.price || product.value.minPrice,
+    },
+  )
 }
 
 // Lắng nghe cập nhật WebSocket Realtime Presence từ /topic/admin/presence

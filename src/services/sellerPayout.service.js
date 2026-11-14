@@ -24,3 +24,4 @@ export const sellerPayoutService = {
     return apiClient.post('/seller/payouts/request-payout')
   },
 }
+

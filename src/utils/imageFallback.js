@@ -10,3 +10,4 @@ export function onProductImgError(event, fallbackUrl = PLACEHOLDER_PRODUCT_IMG) 
   event.target.onerror = null
   event.target.src = fallbackUrl
 }
+
