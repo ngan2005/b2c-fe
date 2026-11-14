@@ -2,7 +2,7 @@
  * useRealtime.js — STOMP/SockJS composable for real-time events.
  *
  * Usage:
- *   const { isConnected, lastError } = useRealtime({
+ *   const { isConnected, lastError, subscribe } = useRealtime({
  *     topics: [
  *       { destination: '/topic/admin/dashboard', callback: (msg) => {} },
  *       { destination: '/topic/admin/presence',  callback: (msg) => {} },
@@ -11,6 +11,7 @@
  *
  * Connects to /ws via STOMP/SockJS with JWT auth (when logged in) or anonymously.
  * Auto-reconnects with exponential backoff on disconnect, and reacts to token changes.
+ * Supports static topic configuration as well as dynamic `subscribe(destination, callback)`.
  */
 import { ref, onUnmounted, watch } from 'vue'
 import { Client } from '@stomp/stompjs'
@@ -36,6 +37,9 @@ export function useRealtime(options = {}) {
   let reconnectTimer = null
   let attempt = 0
   let isExplicitlyClosed = false
+
+  // Store dynamic subscriptions: Map<Symbol, { destination, callback, stompSub }>
+  const activeSubscriptions = new Map()
 
   function parseMessage(raw) {
     try {
@@ -84,14 +88,34 @@ export function useRealtime(options = {}) {
         lastError.value = null
         attempt = 0
 
+        // 1. Subscribe static topics configured in options
         topics.forEach(({ destination, callback }) => {
-          stompClient.subscribe(destination, (frame) => {
-            callback(parseMessage(frame.body))
-          })
+          try {
+            stompClient.subscribe(destination, (frame) => {
+              callback(parseMessage(frame.body))
+            })
+          } catch (err) {
+            console.warn('[useRealtime] Failed to subscribe to', destination, err)
+          }
+        })
+
+        // 2. Re-subscribe any dynamic active subscriptions
+        activeSubscriptions.forEach((subEntry) => {
+          try {
+            subEntry.stompSub = stompClient.subscribe(subEntry.destination, (frame) => {
+              subEntry.callback(parseMessage(frame.body))
+            })
+          } catch (err) {
+            console.warn('[useRealtime] Failed to re-subscribe to', subEntry.destination, err)
+          }
         })
       },
       onDisconnect: () => {
         isConnected.value = false
+        // Clear stompSub references on disconnect
+        activeSubscriptions.forEach((entry) => {
+          entry.stompSub = null
+        })
         scheduleReconnect()
       },
       onStompError: (frame) => {
@@ -109,6 +133,39 @@ export function useRealtime(options = {}) {
     })
 
     stompClient.activate()
+  }
+
+  function subscribe(destination, callback) {
+    if (!destination || !callback) return () => {}
+
+    const subKey = Symbol()
+    const subEntry = {
+      destination,
+      callback,
+      stompSub: null,
+    }
+
+    if (stompClient && stompClient.connected) {
+      try {
+        subEntry.stompSub = stompClient.subscribe(destination, (frame) => {
+          callback(parseMessage(frame.body))
+        })
+      } catch (e) {
+        console.warn('[useRealtime] error in direct subscribe', e)
+      }
+    }
+
+    activeSubscriptions.set(subKey, subEntry)
+
+    // Return unsubscribe function
+    return () => {
+      if (subEntry.stompSub) {
+        try {
+          subEntry.stompSub.unsubscribe()
+        } catch {}
+      }
+      activeSubscriptions.delete(subKey)
+    }
   }
 
   function disconnect() {
@@ -137,5 +194,5 @@ export function useRealtime(options = {}) {
     disconnect()
   })
 
-  return { isConnected, lastError }
+  return { isConnected, lastError, subscribe }
 }

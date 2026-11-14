@@ -532,3 +532,4 @@ onMounted(loadAll)
   to { transform: rotate(360deg); }
 }
 </style>
+
