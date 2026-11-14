@@ -32,6 +32,13 @@ export const chatService = {
   },
 
   /**
+   * List conversations for seller (alias used in Seller/Chat.vue)
+   */
+  listConversations(params = {}) {
+    return apiClient.get('/seller/conversations', { params })
+  },
+
+  /**
    * List conversations specifically for buyer
    */
   listBuyerConversations(params = {}) {

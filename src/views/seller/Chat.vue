@@ -97,6 +97,9 @@ async function selectConversation(conv) {
   messages.value = []
   setupSocket()
   await loadMessages()
+  chatService.markAsRead(conv.id).then(() => {
+    conv.unreadCount = 0
+  }).catch(() => {})
 }
 
 async function loadMessages() {
@@ -120,16 +123,20 @@ async function sendMessage() {
   sending.value = true
   try {
     const msg = await chatService.sendMessage(activeConv.value.id, { content: text })
-    // Append the returned message or a local optimistic one
-    messages.value.push({
-      id: msg?.id || Date.now(),
-      content: text,
-      sender: 'SELLER',
-      createdAt: new Date().toISOString(),
-    })
+    const savedMsg = msg?.data || msg
+    const exists = messages.value.some((m) => m.id === savedMsg?.id)
+    if (!exists) {
+      messages.value.push(savedMsg || {
+        id: Date.now(),
+        content: text,
+        sender: 'SELLER',
+        createdAt: new Date().toISOString(),
+      })
+    }
     newMessage.value = ''
     await nextTick()
     scrollToBottom()
+    loadConversations()
   } catch {
     // interceptor
   } finally {
@@ -150,9 +157,12 @@ function onKeydown(e) {
   }
 }
 
-onMounted(() => {
-  loadConversations()
+onMounted(async () => {
+  await loadConversations()
   setupSocket()
+  if (conversations.value.length > 0 && !activeConv.value) {
+    selectConversation(conversations.value[0])
+  }
 })
 
 onUnmounted(() => {
