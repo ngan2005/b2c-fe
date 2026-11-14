@@ -91,6 +91,14 @@ const orderCode = ref('')
 const errorMessage = ref('')
 
 onMounted(() => {
+  // If VNPay returned directly to Frontend with raw vnp_* params, forward to Backend to verify signature & commit to DB
+  if (route.query.vnp_ResponseCode || route.query.vnp_SecureHash) {
+    const apiBase = import.meta.env.VITE_API_BASE || 'http://localhost:8080/api/v1'
+    const apiOrigin = new URL(apiBase, window.location.origin).origin
+    window.location.href = `${apiOrigin}/api/v1/payments/return${window.location.search}`
+    return
+  }
+
   // Read query params set by the backend redirect
   status.value = route.query.status || ''
   orderCode.value = route.query.orderCode || ''
